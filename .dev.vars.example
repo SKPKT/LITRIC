@@ -1,0 +1,4 @@
+# Local development only. Production values belong in Sites runtime secrets.
+LITRIC_ADMIN_EMAIL="owner@example.invalid"
+# Existing deployments can keep LITRIX_ADMIN_EMAIL; the server accepts it as a legacy alias.
+SMARTLIB_API_KEY=""

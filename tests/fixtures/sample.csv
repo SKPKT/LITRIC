@@ -1,0 +1,4 @@
+code,school,name,email,rejected,approved,total eng,total bm,total others
+ABA6052,SEKOLAH UJIAN,MURID UJIAN A,fixture-a@example.invalid,0,144,44,100,0
+ABA6052,SEKOLAH UJIAN,MURID UJIAN B,fixture-b@example.invalid,0,288,88,200,0
+OTHER,SEKOLAH LAIN,MURID LUAR,fixture-other@example.invalid,0,999,999,0,0

@@ -1,0 +1,13 @@
+{
+  "id": "/LITRIC/",
+  "name": "LITRIC — Literacy Intelligence for Tracking, Reporting, Insights & Competency",
+  "short_name": "LITRIC",
+  "description": "Every Read Counts. Every Progress Matters.",
+  "lang": "ms",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "theme_color": "#062F28",
+  "background_color": "#F8FAF6",
+  "icons": [{"src": "./favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}]
+}

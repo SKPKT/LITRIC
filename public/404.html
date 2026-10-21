@@ -1,0 +1,6 @@
+<!doctype html><html lang="ms"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>LITRIC • Kembali ke aplikasi</title><script>
+// Module routes use hashes and refresh normally. Repair accidentally shared path links.
+const base = '/LITRIC/';
+const path = location.pathname.startsWith(base) ? location.pathname.slice(base.length) : '';
+if (path && !path.includes('.')) location.replace(base + '#/' + path + location.search);
+</script><body style="font-family:system-ui;padding:3rem;background:#F8FAF6;color:#142A24"><h1>LITRIC</h1><p>Laluan ini tidak ditemui.</p><a href="/LITRIC/">Kembali ke aplikasi LITRIC</a></body></html>
