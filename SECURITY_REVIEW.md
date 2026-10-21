@@ -1,6 +1,6 @@
 # LITRIC backend security review
 
-Scope: source review and local built-Worker tests, 21 October 2026. This is not a penetration test or a guarantee of production readiness. Production authentication, storage administration and deployed browser behavior require the final acceptance checks in DEPLOYMENT.md.
+Scope: source review and local built-Worker tests, 21 October 2026. This is not a penetration test or a guarantee of production readiness. An existing authorized administrator browser session was verified through the live Pages connection. Fresh-login OAuth, other roles on production and real devices still require the acceptance checks in DEPLOYMENT.md.
 
 | Control | Finding |
 |---|---|
@@ -20,9 +20,9 @@ Scope: source review and local built-Worker tests, 21 October 2026. This is not 
 
 ## Material limits and smallest follow-up changes
 
-- The new backend bridge and public frontend have **not been deployed**; the user requested code/configuration first after the GitHub 404. Full browser authentication/bridge behavior is unverified. Keep using the existing private app until acceptance passes.
+- The public frontend and private backend bridge are deployed. The owner explicitly authorized the sanitized repository to become Public after GitHub rejected Pages on the private-repository plan. An existing authorized administrator session loaded the real dashboard through Pages; fresh-login OAuth, expiry, other production roles and mobile acceptance still need testing.
 - All `skpkt.github.io` projects share an origin. Keep them under trusted school control, or move the frontend to a dedicated school origin and update the explicit allowlist before hosting untrusted content elsewhere on the account.
 - Existing authentication relies on Sites dispatch stripping/overwriting identity headers. Moving to another backend host requires verified session/token middleware before those headers can be trusted. Reusing the database alone is insufficient.
 - Large-school scalability, rate limiting, operational monitoring, retention and scheduled database/R2 backups need operator configuration. Existing single-school limits remain; do not assume this source review establishes capacity or uptime.
-- Public repository administration, branch/environment protection, production secret values and cloud storage ACLs could not be audited through the unavailable target repository. Keep tokens out of future workflow logs and artifacts.
+- GitHub admin/push access, Public visibility, Pages workflow setup and the main-only Pages environment were verified. Main branch review requirements are not enforced by this migration; configure repository rules for future collaborative changes. Production secret values and storage ACLs were not dumped or changed. Keep tokens out of workflow logs and artifacts.
 - The bridge returns only authorized data, but a compromised script on the trusted frontend origin can read what that signed-in user can read. Standard frontend supply-chain/XSS controls and protected reviews remain necessary.

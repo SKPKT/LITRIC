@@ -18,9 +18,9 @@ npm run build:pages
 npm run preview:pages
 ```
 
-Workflow `.github/workflows/deploy.yml` membina/memeriksa pull request dan menerbitkan perubahan `main` ke Pages setelah kawalan semakan repositori diluluskan. Hanya `dist-pages/` dimuat naik. Backend `/bridge` yang dikemas kini perlu diterbitkan secara peribadi dahulu; frontend Pages menggunakan tetingkap log masuk backend tanpa menyalin token/sesi ke kod awam.
+Workflow `.github/workflows/deploy.yml` membina/memeriksa pull request dan menerbitkan perubahan `main` ke Pages setelah kawalan semakan repositori diluluskan. Hanya `dist-pages/` dimuat naik. Backend `/bridge` telah diterbitkan secara peribadi; frontend Pages menggunakan tetingkap log masuk backend tanpa menyalin token/sesi ke kod awam.
 
-**Status: kod dan konfigurasi sahaja; belum diterbitkan.** Sambungan GitHub akaun `SKPKT` memulangkan 404 untuk `SKPKT/LITRIC`. Sasaran `https://skpkt.github.io/LITRIC/` belum disahkan. Penerbitan ditangguhkan mengikut arahan pengguna.
+**Status: sudah diterbitkan.** [Buka LITRIC](https://skpkt.github.io/LITRIC/). Repositori `SKPKT/LITRIC` dijadikan Public dengan arahan jelas pemilik; hanya sumber yang telah dibersihkan dimuat naik. GitHub Actions lulus dan URL/aset produksi disahkan. Backend `/bridge` juga diterbitkan secara peribadi pada Site sedia ada. Sambungan menggunakan sesi pentadbir sebenar berjaya memuatkan dashboard melalui Pages; data murid kekal di backend berizin.
 
 Pakej awam mempunyai `lib/seed-data.json` kosong dan tiada sejarah Git/data murid. `npm run check:public` mengesahkannya. Checkout asal peribadi mengandungi sumber sebenar; **jangan push checkout atau sejarah peribadi itu ke GitHub awam**. Jalankan `npm run export:public -- ../LITRIC-public-new` ke direktori baharu untuk menyediakan salinan bersih selepas suntingan.
 

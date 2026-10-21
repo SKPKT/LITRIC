@@ -5,12 +5,17 @@ Every Read Counts. Every Progress Matters.
 
 ## Current result — 21 October 2026
 
-Code and deployment configuration are prepared locally, as requested. This migration has **not been published**. The authenticated GitHub connector returned **404 Not Found** for `SKPKT/LITRIC`; the account is `SKPKT`. A missing repository and an inaccessible private repository are indistinguishable from that response. Write/admin permission and Pages availability could not be verified.
+LITRIC is published at **https://skpkt.github.io/LITRIC/**. The repository exists, authorized GitHub access was verified as `SKPKT` with admin/push permission, and the owner explicitly authorized changing this newly created repository from Private to Public. Only sanitized source was committed; the private original Git history and pupil datasets were excluded.
 
-Target repository: <https://github.com/SKPKT/LITRIC>
-Target Pages URL: <https://skpkt.github.io/LITRIC/> — **not a verified deployment**.
+Repository: <https://github.com/SKPKT/LITRIC>
+Verified Pages URL: <https://skpkt.github.io/LITRIC/>
+Successful Actions run: <https://github.com/SKPKT/LITRIC/actions/runs/39557357386>
 
-The existing private Site remains at <https://litrix-taiping.tender-eft-9384.chatgpt.site>. Its URL is retained for compatibility; the new code uses the LITRIC brand. No deployment, audience change, database migration or production data write was performed during this preparation.
+The first attempt was blocked because GitHub Pages was unavailable for a private repository on the account's plan. After the owner's explicit visibility choice, Pages was enabled with `build_type: workflow` and HTTPS, and the rerun succeeded. Tests, privacy guard, TypeScript, static build, artifact upload, deployment and the live HTTP check all passed on GitHub Actions.
+
+The updated private backend is live at <https://litrix-taiping.tender-eft-9384.chatgpt.site>. Its URL and audience remain unchanged for compatibility, and its title/application brand is LITRIC. Backend deployment `appgdep_6ad8608876dc8191a46cd379b6ddefd8` succeeded from private source `5386f3ab6b206a8969e0084fc273c6d04a57f3d4`, with runtime environment revision 1 and the existing D1/R2 bindings. No schema migration or deletion was introduced.
+
+The Pages login button was exercised in the browser with an existing authorized administrator session: the private connection succeeded and the real LITRIC dashboard loaded through Pages. SMARTLIB's page correctly remained unconfigured. Real-device mobile/tablet, fresh-account OAuth, session-expiry and separate-role acceptance testing remain outstanding; local API/unit role tests are recorded in VALIDATION.md.
 
 ## Build separation
 
@@ -51,7 +56,7 @@ Publish the updated private Worker to the **existing Sites project** in `.openai
 
 Existing `LITRIX_ADMIN_EMAIL` remains a server-side legacy alias. `LITRIC_ADMIN_EMAIL` is preferred for new installations; if both are set, the new key wins. Do not change the configured owner accidentally. No secret belongs in GitHub variables prefixed `VITE_`, frontend code, a manifest or the Pages build.
 
-The `/bridge` route in the updated backend is required by the Pages frontend. It is **not yet deployed** in this preparation. Keep the existing private version available as a restore point. Production source restore point: `20e9ee978a6673a2bbc42f7416d86d59bc020754`; the local private backup/tag `litrix-before-litric-20261021` preserves the original code. This is a source restore point, not a fresh production database backup. Export a current authorized database/R2 backup before a future production migration.
+The `/bridge` route in the updated backend is required by the Pages frontend. It is deployed in the verified private backend version above. Keep the existing private version available as a restore point. Production source restore point: `20e9ee978a6673a2bbc42f7416d86d59bc020754`; the local private backup/tag `litrix-before-litric-20261021` preserves the original code. This is a source restore point, not a fresh production database backup. Export a current authorized database/R2 backup before a future production migration.
 
 ## Browser authentication connection
 
@@ -61,15 +66,15 @@ The Pages login button opens the private backend `/bridge` in a separate top-lev
 
 Allowed production parent origin: `https://skpkt.github.io`. The backend rejects cross-origin API calls and does not send `Access-Control-Allow-Origin: *`. The bridge is an explicit message channel, not an open CORS proxy; only enumerated application endpoints and GET/POST are accepted. Local QA permits `http://127.0.0.1:4173`/`http://localhost:4173` only against another loopback backend.
 
-Keep the backend window open while using Pages. Closing it or receiving a 401 clears frontend state. Logging out closes the connection and navigates to the backend's real sign-out endpoint. Some mobile browsers or OAuth cross-window policies may sever `window.opener`; return to Pages and connect again after signing in. The direct private-backend link remains available. This real-browser OAuth and popup behavior **still needs acceptance testing** before relying on Pages for school operations.
+Keep the backend window open while using Pages. Closing it or receiving a 401 clears frontend state. Logging out closes the connection and navigates to the backend's real sign-out endpoint. Some mobile browsers or OAuth cross-window policies may sever `window.opener`; return to Pages and connect again after signing in. The direct private-backend link remains available. The connection was verified using an existing administrator browser session. Fresh-login OAuth and mobile cross-window behavior still need acceptance testing on school devices.
 
 All repositories under `skpkt.github.io` share one web origin. Every script hosted by that account must therefore be trusted. A dedicated school-controlled frontend origin is the smallest next improvement if unrelated/untrusted websites are later hosted under that account. Do not weaken origin checks to `*` to solve connection problems.
 
-## GitHub setup after access is available
+## Reproduce GitHub setup or update the deployment
 
 1. Verify `SKPKT/LITRIC` exists and the connected account can push reviewed source and workflows. Inspect existing contents and branch rules.
 2. Configure `main` branch protection/rulesets to require reviewed pull requests and the successful build check. The workflow validates pull requests and deploys pushes to `main`; review requirements must be enforced in repository settings.
-3. In **Settings → Pages**, select **GitHub Actions**. Configure the `github-pages` environment to allow `main` and any required reviewer approval. No repository-admin access has been assumed or exercised here.
+3. In **Settings → Pages**, select **GitHub Actions**. Configure the `github-pages` environment to allow `main` and any required reviewer approval. Repository-admin access was verified for the authorized Pages setup; the generated github-pages environment restricts deployment to main. Additional reviewer requirements remain an operator choice.
 4. Commit the sanitized source with `.github/workflows/deploy.yml` and merge approved changes to `main`.
 5. The build installs locked dependencies, checks privacy, runs tests/type checking, builds `/LITRIC/`, and uploads `dist-pages`. The deploy job requests only Pages/OIDC permissions, uses supported official Pages actions, and HTTP-checks the deployment action's returned URL. Failures create Actions errors and job-summary entries; no notification messages are sent externally.
 6. Inspect the actual workflow/deployment result, then open its returned URL. Do not describe the target URL as live before those checks pass.
