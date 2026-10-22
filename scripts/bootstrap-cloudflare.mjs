@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { randomBytes, createHash } from 'node:crypto';
 import { hiddenInput } from './hidden-input.mjs';
-import { setupFailure } from './cloudflare-setup-error.mjs';
+import { needsWranglerLogin, setupFailure } from './cloudflare-setup-error.mjs';
 const origin = process.env.LITRIC_PRODUCTION_URL;
 if (!origin || new URL(origin).origin !== origin || !origin.startsWith('https://') || !new URL(origin).hostname.endsWith('.workers.dev'))
   throw new Error('Set LITRIC_PRODUCTION_URL to the exact school-controlled HTTPS workers.dev origin.');
@@ -15,7 +15,15 @@ const execute = (args, input) => spawnSync(process.execPath, ['node_modules/wran
 });
 // Refresh/check the same OAuth connection before asking for a private password.
 // Child processes are non-interactive, so they cannot open a missing login flow.
-const preflight = execute(['secret', 'list']);
+let preflight = execute(['secret', 'list']);
+if (preflight.status !== 0 && needsWranglerLogin(preflight) && !process.argv.includes('--check') && process.stdin.isTTY) {
+  console.log('Sesi Wrangler belum tersedia dalam terminal ini. Log masuk Cloudflare dahulu.');
+  console.log('Jika pelayar tidak terbuka, buka URL yang Wrangler paparkan. Tekan Authorize pada akaun sekolah dan tunggu di sini.');
+  console.log('Jangan taip kata laluan GPM sehingga permintaan input tersembunyi muncul.');
+  const login = spawnSync(process.execPath, ['node_modules/wrangler/bin/wrangler.js', 'login', '--scopes', 'account:read', 'user:read', 'workers:write', 'workers_scripts:write', 'd1:write'], { stdio: 'inherit', windowsHide: true });
+  if (login.status !== 0) throw new Error('Login Cloudflare belum selesai. Cuba semula setup; jangan taip kata laluan pada prompt PS.');
+  preflight = execute(['secret', 'list']);
+}
 if (preflight.status !== 0) throw new Error(setupFailure(preflight));
 if (process.argv.includes('--check')) {
   console.log('Cloudflare sedia untuk setup GPM. Tiada kata laluan diminta atau secret dipasang.');

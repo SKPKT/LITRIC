@@ -1,7 +1,11 @@
 // Return fixed guidance only: Wrangler output can contain private values.
+export function needsWranglerLogin(result) {
+  const output = String(result.stdout || '') + '\n' + String(result.stderr || '');
+  return /non-interactive environment|not authenticated|not logged in|authentication error|invalid access token|\b10000\b/i.test(output);
+}
 export function setupFailure(result) {
   const output = String(result.stdout || '') + '\n' + String(result.stderr || '');
-  if (/non-interactive environment|not authenticated|not logged in|authentication error|invalid access token|\b10000\b/i.test(output))
+  if (needsWranglerLogin(result))
     return 'Sesi Wrangler tidak tersedia atau telah tamat. Jalankan arahan Wrangler login untuk akaun sekolah, kemudian cuba semula. Tidak perlu menghantar token atau kata laluan dalam chat.';
   if (/ECONNRESET|ENOTFOUND|ETIMEDOUT|fetch failed|network error/i.test(output))
     return 'Sambungan ke Cloudflare gagal. Semak Internet dan cuba semula. Tiada kata laluan atau secret dicetak.';
