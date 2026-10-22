@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
 const seed = JSON.parse(fs.readFileSync("lib/seed-data.json"));
 assert.equal(Array.isArray(seed) && seed.length === 0, true, "Use npm run export:public first. The private checkout MUST NOT be pushed to GitHub.");
-const skip = new Set([".git","node_modules","dist","dist-pages",".next",".vinext",".wrangler",".sites-runtime"]);
+const skip = new Set([".git","node_modules","dist","dist-pages",".next",".vinext",".wrangler",".sites-runtime","dist-api","dist-worker"]);
 function visit(dir) {
   for (const e of fs.readdirSync(dir,{withFileTypes:true})) {
     if (skip.has(e.name)) continue;

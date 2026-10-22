@@ -42,7 +42,7 @@ async function handle(request: Request) {
     const url = new URL(request.url),
       path = url.pathname.replace(/^\/api\//, "");
     const origin = request.headers.get("origin");
-    if (origin && origin !== url.origin)
+    if (origin && origin !== ((env as any).LITRIC_AUTH_MODE === "standalone" ? ((env as any).FRONTEND_ORIGIN || url.origin) : url.origin))
       fail("Asal permintaan tidak dibenarkan.", 403);
     const u = await auth(request);
     if (request.method !== "GET") {

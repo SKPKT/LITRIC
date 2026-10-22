@@ -46,7 +46,7 @@ import {
 } from "lucide-react";
 import ImportCentre from "./modules/import-centre";
 import WorkspaceViews from "./modules/workspace-views";
-import {apiFetch, connectBackend, disconnectBackend, downloadProtected, isPages, backendOrigin} from "../lib/client-api";
+import {apiFetch, logout, downloadProtected, isPages} from "../lib/client-api";
 import {
   DEFAULT_RULE,
   MONTHS,
@@ -252,37 +252,14 @@ export function SourceBars({ items, active = false }: any) {
     </div>
   );
 }
-const nav = [
-  [
-    "UTAMA",
-    [
-      ["dashboard", "Dashboard Utama", LayoutDashboard],
-      ["import", "Import Data AINS", Upload],
-      ["murid", "Pengurusan Murid", Users],
-      ["analitik", "Analitik NILAM", ChartNoAxesCombined],
-    ],
-  ],
-  [
-    "PEMBANGUNAN LITERASI",
-    [
-      ["bintang", "Pencapaian Bintang", Star],
-      ["sasaran", "Sasaran Bacaan", Target],
-      ["bacaan", "Bacaan Berbantu", BookOpen],
-      ["smartlib", "Integrasi SMARTLIB", Library],
-      ["program", "Program Membaca", CalendarDays],
-    ],
-  ],
-  [
-    "PENGURUSAN",
-    [
-      ["sijil", "Sijil Digital", Award],
-      ["laporan", "Laporan", FileChartColumn],
-      ["tetapan", "Tetapan Sistem", Settings],
-      ["audit", "Audit & Sejarah Import", History],
-    ],
-  ],
-] as any;
-const pageTitles: any = Object.fromEntries(
+import StandaloneLogin from "./standalone-login";
+import {IndependentDashboard,LifetimeAchievements} from "./modules/independent-views";
+const nav = [["LITRIC V2", [
+  ["dashboard", "Dashboard Analitik", LayoutDashboard],
+  ["import", "Import Data AINS", Upload],
+  ["murid", "Pengurusan Murid", Users],
+  ["bintang", "Pencapaian Bintang NILAM", Star],
+]]] as any;const pageTitles: any = Object.fromEntries(
   nav.flatMap(([, items]: any) => items.map(([id, label]: any) => [id, label])),
 );
 
@@ -312,7 +289,8 @@ export default function Litric() {
     });
   useEffect(() => {
     const h = () => {
-      setRoute(location.hash.replace(/^#\/?/, "") || "dashboard");
+      const requested=location.hash.replace(/^#\/?/, "") || "dashboard";
+      setRoute(["dashboard","import","murid","bintang"].includes(requested)||requested.startsWith("profil/") ? requested : "dashboard");
       setMobile(false);
     };
     h();
@@ -351,7 +329,7 @@ export default function Litric() {
     if (!isPages) return;
     const disconnected = () => {
       setData(null);
-      setError(Object.assign(new Error("Sambungan ditutup. Sila sambungkan semula untuk meneruskan."), {status: 401}));
+      setError(Object.assign(new Error("Sesi tamat. Sila log masuk semula."), {status: 401}));
     };
     const download = (event: MouseEvent) => {
       const a = (event.target as Element).closest?.("a[href]") as HTMLAnchorElement | null;
@@ -398,60 +376,7 @@ export default function Litric() {
     go,
     search,
   };
-  if (error && !data)
-    return (
-      <main className="login-shell">
-        <div className="login-art">
-          <Brand />
-          <div>
-            <span className="eyebrow">SMARTLIB / LITERACY INTELLIGENCE</span>
-            <h1>
-              Setiap bacaan,
-              <br />
-              <em>satu kemajuan.</em>
-            </h1>
-            <p>
-              Every Read Counts.
-              <br />
-              Every Progress Matters.
-            </p>
-            <BookArt />
-          </div>
-          <small>SK Pendidikan Khas Taiping · ABA6052</small>
-        </div>
-        <div className="login-content">
-          <BookOpen size={38} className="green-text" />
-          <h2>
-            {error.status === 403
-              ? "Akses sekolah diperlukan"
-              : "Selamat datang ke LITRIC"}
-          </h2>
-          <p>
-            {error.status === 403
-              ? error.message
-              : "Log masuk untuk mengurus bacaan, memahami perkembangan dan meraikan pencapaian murid."}
-          </p>
-          <p className="product-expansion">Literacy Intelligence for Tracking, Reporting, Insights &amp; Competency</p>
-          <a
-            className="btn primary"
-            href={(isPages ? backendOrigin : "") + "/signin-with-chatgpt?return_to=%2F"}
-            target="_top"
-            onClick={isPages ? async (e) => {
-              e.preventDefault();
-              try { await connectBackend(); await refresh(); }
-              catch (error) { setError(error); }
-            } : undefined}
-          >
-            {isPages ? "Sambung & log masuk" : "Log masuk dengan ChatGPT"} <ArrowRight size={17} />
-          </a>
-          {isPages && <><p className="connection-note">Log masuk dalam tetingkap yang dibuka, kemudian kembali ke halaman ini. Biarkan tetingkap sambungan terbuka. <a href={backendOrigin} target="_blank" rel="noreferrer">Buka aplikasi backend</a></p><p className="connection-note" role="status">{error.message}</p></>}
-          <small>
-            Platform analitik sekolah yang berasingan daripada sistem rasmi
-            AINS.
-          </small>
-        </div>
-      </main>
-    );
+  if (error && !data) return <StandaloneLogin error={error} onLogin={async()=>{go("dashboard");await refresh();}}/>;
   if (!data)
     return (
       <div className="boot">
@@ -459,29 +384,6 @@ export default function Litric() {
         <div className="spinner" />
         <p>Menyediakan ruang literasi anda…</p>
       </div>
-    );
-  if (data.user.role === "public")
-    return (
-      <main className="public-view">
-        <Brand />
-        <h1>Literasi di {data.school}</h1>
-        <div className="kpis">
-          <Kpi
-            title="Murid dalam sumber"
-            value={data.aggregate.students}
-            icon={Users}
-          />
-          <Kpi
-            title="Bacaan dilaporkan"
-            value={data.aggregate.reported}
-            icon={BookOpen}
-          />
-        </div>
-        {data.aggregate.unverified && <p>Tempoh belum disahkan.</p>}
-        <a href="/signout-with-chatgpt?return_to=%2F" target="_top">
-          Log keluar
-        </a>
-      </main>
     );
   const m = data.metrics,
     title = route.startsWith("profil/")
@@ -550,8 +452,8 @@ export default function Litric() {
           <div className="ecosystem">
             <Library size={19} />
             <span>
-              Dalam ekosistem <b>SMARTLIB</b>
-              <small>Literasi yang saling terhubung</small>
+              Dalam ekosistem <b>LITRIC</b>
+              <small>Every Progress Matters.</small>
             </span>
             <ArrowUpRight size={15} />
           </div>
@@ -565,9 +467,9 @@ export default function Litric() {
             </div>
             <a
               aria-label="Log keluar"
-              href={(isPages ? backendOrigin : "") + "/signout-with-chatgpt?return_to=%2F"}
+              href="#/dashboard"
               target="_top"
-              onClick={isPages ? () => { disconnectBackend(); setData(null); setError(Object.assign(new Error("Sesi frontend ditutup."), {status: 401})); } : undefined}
+              onClick={(e)=>{e.preventDefault();logout().catch(()=>{});}}
             >
               <LogOut size={17} />
             </a>
@@ -664,7 +566,7 @@ export default function Litric() {
                   <button
                     className="text-btn"
                     onClick={() => {
-                      go(isAdmin ? "audit" : "analitik");
+                      go(isAdmin ? "import" : "murid");
                       setNotifications(false);
                     }}
                   >
@@ -706,7 +608,7 @@ export default function Litric() {
                 })}
               </span>
               {!isStudent && (
-                <button className="btn" onClick={() => go("laporan")}>
+                <button className="btn" onClick={() => downloadProtected("/api/report?format=xlsx&"+query(filters)).catch(e=>notify(e.message))}>
                   <Download size={16} /> Eksport Laporan
                 </button>
               )}
@@ -729,6 +631,7 @@ export default function Litric() {
                       })
                     }
                   >
+                    <option value="">Semua set data</option>
                     {[
                       ...new Set(
                         data.import_batches
@@ -877,42 +780,18 @@ export default function Litric() {
               )}
             </>
           )}
-          {!data.import_batches.length && isAdmin && route === "dashboard" ? (
-            <Panel title="Mulakan dengan sumber sekolah">
-              <Empty
-                icon={CloudUpload}
-                title="Fail sekolah sedia untuk diimport"
-                action={
-                  <button
-                    className="btn primary"
-                    disabled={busy}
-                    onClick={() => mutate("seed", {}).catch(() => {})}
-                  >
-                    {busy ? (
-                      <RefreshCw className="spin" size={17} />
-                    ) : (
-                      <Upload size={17} />
-                    )}{" "}
-                    Import 8 fail yang dibekalkan
-                  </button>
-                }
-              >
-                Hanya baris ABA6052 dimuatkan. Tempoh dan semantik akan kekal
-                belum disahkan sehingga disemak.
-              </Empty>
-            </Panel>
-          ) : route === "dashboard" ? (
+          {route === "dashboard" ? (
             isStudent ? (
               <StudentHome ctx={ctx} />
             ) : (
-              <Dashboard ctx={ctx} />
+              <IndependentDashboard ctx={ctx} />
             )
           ) : route === "import" ? (
-            <ImportCentre {...ctx} />
+            <><ImportCentre {...ctx} /><WorkspaceViews {...ctx} route="audit" /></>
           ) : route === "analitik" ? (
             <Analytics ctx={ctx} />
           ) : route === "bintang" ? (
-            <Achievements ctx={ctx} />
+            <LifetimeAchievements ctx={ctx} />
           ) : (
             <WorkspaceViews {...ctx} route={route} />
           )}
@@ -921,7 +800,7 @@ export default function Litric() {
               <span className="mini-brand">LITRIC</span> Every Read Counts.
               Every Progress Matters.
             </span>
-            <span>© {new Date().getFullYear()} LITRIC · Ekosistem SMARTLIB</span>
+            <span>© {new Date().getFullYear()} LITRIC · SK Pendidikan Khas Taiping</span>
           </footer>
         </main>
       </div>
@@ -968,30 +847,30 @@ function BookArt() {
         cy="149"
         rx="103"
         ry="14"
-        fill="#062f28"
+        fill="var(--deep)"
         opacity=".23"
       />
-      <path d="M42 108l91-40 99 33-90 45z" fill="#b7d9cf" />
-      <path d="M42 108v12l100 37 90-45v-11l-90 45z" fill="#4d9b87" />
-      <path d="M54 82l84-38 90 30-87 44z" fill="#f5c451" />
-      <path d="M54 82v16l87 34 87-44V74l-87 44z" fill="#bf9435" />
+      <path d="M42 108l91-40 99 33-90 45z" fill="var(--light-purple)" />
+      <path d="M42 108v12l100 37 90-45v-11l-90 45z" fill="var(--violet)" />
+      <path d="M54 82l84-38 90 30-87 44z" fill="var(--gold)" />
+      <path d="M54 82v16l87 34 87-44V74l-87 44z" fill="var(--gold-dark)" />
       <path
         d="M61 64c30-12 49-12 79 4 28-26 52-37 78-36l-2 45c-23 0-47 13-76 36-28-16-51-20-79-13z"
-        fill="#e8f3eb"
+        fill="var(--light-purple)"
       />
       <path
         d="M61 64v36c28-7 51-3 79 13V68c-30-16-49-16-79-4z"
-        fill="#fffdf4"
+        fill="var(--surface)"
       />
       <path
         d="M140 68v45m-64-38c18-3 31 0 47 7m-47 7c18-3 31 0 47 7m37-28c13-12 24-18 39-22m-39 35c13-12 24-18 39-22"
-        stroke="#82ab99"
+        stroke="var(--chart-secondary)"
         strokeWidth="2"
       />
-      <path d="M111 57v31l9-3 8 8V60" fill="#10b981" />
-      <path d="M42 36l3 7 8 1-6 5 2 8-7-4-7 4 2-8-6-5 8-1z" fill="#f5c451" />
-      <circle cx="218" cy="116" r="4" fill="#83cbb1" />
-      <circle cx="229" cy="49" r="3" fill="#f5c451" />
+      <path d="M111 57v31l9-3 8 8V60" fill="var(--violet)" />
+      <path d="M42 36l3 7 8 1-6 5 2 8-7-4-7 4 2-8-6-5 8-1z" fill="var(--gold)" />
+      <circle cx="218" cy="116" r="4" fill="var(--chart-secondary)" />
+      <circle cx="229" cy="49" r="3" fill="var(--gold)" />
     </svg>
   );
 }
@@ -1174,7 +1053,7 @@ export function Dashboard({ ctx }: any) {
               className="donut"
               style={{
                 background: languageTotal
-                  ? `conic-gradient(var(--emerald) 0 ${bm}%, #76cbb8 ${bm}% ${bm + eng}%, #efc96a ${bm + eng}% 100%)`
+                  ? `conic-gradient(var(--emerald) 0 ${bm}%, var(--chart-secondary) ${bm}% ${bm + eng}%, var(--gold) ${bm + eng}% 100%)`
                   : "var(--line)",
               }}
             >
@@ -1190,7 +1069,7 @@ export function Dashboard({ ctx }: any) {
                 <span>
                   <i
                     style={{
-                      background: ["var(--emerald)", "#76cbb8", "#efc96a"][i],
+                      background: ["var(--emerald)", "var(--chart-secondary)", "var(--gold)"][i],
                     }}
                   />
                   {["Bahasa Melayu", "Bahasa Inggeris", "Lain-lain"][i]}
@@ -1314,19 +1193,19 @@ export function Dashboard({ ctx }: any) {
               Upload,
               "Sahkan sumber data",
               "Semak tempoh dan baris yang bertindih.",
-              "audit",
+              "import",
             ],
             [
               Target,
-              "Tetapkan sasaran bacaan",
-              "Bina matlamat yang sesuai untuk murid.",
-              "sasaran",
+              "Urus rekod murid",
+              "Semak profil dan perkembangan bacaan.",
+              "murid",
             ],
             [
               BookOpen,
-              "Rekod bacaan berbantu",
-              "Abadikan aktiviti bersama guru.",
-              "bacaan",
+              "Raikan bintang NILAM",
+              "Lihat pencapaian dan kemajuan murid.",
+              "bintang",
             ],
           ].map(([Icon, title, sub, page]: any) => (
             <button
@@ -1335,8 +1214,8 @@ export function Dashboard({ ctx }: any) {
                 go(
                   data.user.role === "admin"
                     ? page
-                    : page === "audit"
-                      ? "analitik"
+                    : page === "import"
+                      ? "murid"
                       : page,
                 )
               }
