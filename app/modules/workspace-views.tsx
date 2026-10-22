@@ -209,10 +209,12 @@ function Students(ctx: any) {
     [form, setForm] = useState<any>(null),
     [find, setFind] = useState(""),
     [page, setPage] = useState(0),
-    [merge, setMerge] = useState(false);
+    [merge, setMerge] = useState(false),
+    [enrolment,setEnrolment]=useState("all"),
+    [classForm,setClassForm]=useState(false);
   const admin = data.user.role === "admin";
   const list = data.students.filter(
-    (s: any) => !find || s.name.toLowerCase().includes(find.toLowerCase()),
+    (s: any) => (enrolment === "all" || (enrolment === "archived" ? !!s.archived_at : !s.archived_at && (enrolment === "current" ? s.status === "current" : s.status === "transferred" || s.status === "former"))) && (!find || s.name.toLowerCase().includes(find.toLowerCase())),
   );
   const fields = [
     { key: "name", label: "Nama penuh", required: true },
@@ -237,6 +239,7 @@ function Students(ctx: any) {
         { value: "unconfirmed", label: "Belum disahkan" },
         { value: "current", label: "Murid semasa" },
         { value: "former", label: "Bekas murid" },
+        { value: "transferred", label: "Berpindah" },
       ],
     },
     { key: "member_id", label: "ID ahli SMARTLIB" },
@@ -249,6 +252,7 @@ function Students(ctx: any) {
         action={
           admin && (
             <div className="button-row">
+              <button className="btn" onClick={()=>setClassForm(true)}>Tambah kelas</button>
               <button className="btn" onClick={() => setMerge(true)}>
                 <Merge size={15} /> Semak identiti
               </button>
@@ -275,7 +279,7 @@ function Students(ctx: any) {
               }}
             />
           </div>
-          <Pill tone="neutral">{list.length} murid</Pill>
+          <select aria-label="Status direktori" value={enrolment} onChange={e=>{setEnrolment(e.target.value);setPage(0);}}><option value="current">Murid semasa</option><option value="former">Berpindah / bekas murid</option><option value="archived">Arkib</option><option value="all">Semua rekod</option></select><Pill tone="neutral">{list.length} murid</Pill>
         </div>
         <div className="table-scroll">
           <table>
@@ -315,6 +319,7 @@ function Students(ctx: any) {
                           {
                             current: "Semasa",
                             former: "Bekas murid",
+                            transferred: "Berpindah",
                             unconfirmed: "Belum disahkan",
                           } as Record<string, string>
                         )[s.status] || s.status}
@@ -336,6 +341,7 @@ function Students(ctx: any) {
                             Edit
                           </button>
                         )}
+                        {admin&&<button className="text-btn" onClick={()=>mutate("student/archive",{id:s.id,archived:!s.archived_at})}>{s.archived_at?"Pulih arkib":"Arkibkan"}</button>}
                       </div>
                     </td>
                   </tr>
@@ -375,6 +381,7 @@ function Students(ctx: any) {
           onSubmit={(v: any) => mutate("student", v)}
         />
       )}{" "}
+      {classForm&&<Form title="Tambah kelas" fields={[{key:"name",label:"Nama kelas",required:true},{key:"year",label:"Tahun akademik",type:"number",min:2000,max:2100,required:true}]} initial={{year:new Date().getFullYear()}} onClose={()=>setClassForm(false)} onSubmit={(v:any)=>mutate("class",v)}/>}
       {merge && <IdentityReview {...ctx} onClose={() => setMerge(false)} />}
     </>
   );
@@ -494,7 +501,9 @@ function Profile(ctx: any) {
       filters: { dataset: ctx.filters.dataset, year },
     }),
     p = m.students[0],
-    a = p?.achievement || { level: null, progress: 0 },
+    lifetime=aggregate({students:[s],rows:data.ains_summaries,batches:data.import_batches,rule:data.rule,filters:{}}),
+    lifetimeStudent=lifetime.students[0],
+    a = lifetimeStudent?.achievement || { level: null, progress: 0 },
     entries = data.school_reading_entries.filter(
       (r: any) => r.canonical_id === id,
     ),
@@ -535,14 +544,14 @@ function Profile(ctx: any) {
       <div className="kpis">
         <div className="kpi">
           <span>Bacaan dalam sumber</span>
-          <strong>{fmt(p?.reported ?? 0)}</strong>
+          <strong>{fmt(p?.reported)}</strong>
           <small>{ctx.filters.dataset}</small>
         </div>
         <div className="kpi">
-          <span>Layak pengiraan bintang</span>
-          <strong>{fmt(p?.eligible)}</strong>
+          <span>Bacaan terkumpul disahkan</span>
+          <strong>{fmt(lifetimeStudent?.eligible)}</strong>
           <small>
-            {p?.eligible == null ? "Tempoh belum disahkan" : "Skop terpilih"}
+            {lifetimeStudent?.eligible == null ? "Tempoh belum disahkan" : "Semua tahun persekolahan"}
           </small>
         </div>
         <div className="kpi">
@@ -570,7 +579,7 @@ function Profile(ctx: any) {
           sub={
             a.level == null
               ? "Sahkan skop bacaan untuk melihat pencapaian"
-              : "Pencapaian mengikut skop terpilih"
+              : "Pencapaian terkumpul sepanjang persekolahan"
           }
         >
           <div className="profile-badges">
@@ -591,7 +600,7 @@ function Profile(ctx: any) {
                   : `${a.level} Bintang · ${a.remaining} bahan lagi menuju ${a.level + 1} Bintang`}
             </b>
             <span>
-              {fmt(p?.eligible)} / {a.next || "720+"}
+              {fmt(lifetimeStudent?.eligible)} / {a.next || "720+"}
             </span>
           </div>
           <progress max={100} value={a.progress} />
@@ -657,7 +666,7 @@ function Profile(ctx: any) {
                     {b.period_start
                       ? `${b.period_start} – ${b.period_end}`
                       : "Tempoh belum disahkan"}{" "}
-                    · {b.verification}
+                    · {b.verification === "verified" ? "Disahkan" : "Belum disahkan"}
                   </small>
                 </div>
               ))}

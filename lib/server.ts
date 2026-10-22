@@ -13,6 +13,7 @@ import {
   star,
 } from "./domain.mjs";
 import seed from "./seed-data.json";
+import {authenticate} from "./standalone-auth.mjs";
 import { prepareEvents } from "./events.mjs";
 
 export const now = () => new Date().toISOString();
@@ -63,71 +64,7 @@ export async function audit(
   );
 }
 export async function auth(request: Request) {
-  const id = request.headers.get("oai-authenticated-user-id"),
-    email = request.headers.get("oai-authenticated-user-email")?.toLowerCase();
-  if (!id || !email) fail("Sila log masuk dengan ChatGPT.", 401);
-  let u = await first("SELECT * FROM users WHERE id=?", id);
-  if (!u) {
-    const local =
-      ["127.0.0.1", "localhost"].includes(new URL(request.url).hostname) &&
-      id === "local_seedy";
-    const owner =
-      email === ((env as any).LITRIC_ADMIN_EMAIL || (env as any).LITRIX_ADMIN_EMAIL)?.toLowerCase() || local;
-    const invite = await first(
-      "SELECT * FROM invitations WHERE email=?",
-      email,
-    );
-    if (!owner && !invite)
-      fail("Akaun belum diberi akses oleh pentadbir sekolah.", 403);
-    const schoolId = owner ? SCHOOL.id : invite.school_id;
-    let name = email;
-    try {
-      name = decodeURIComponent(
-        request.headers.get("oai-authenticated-user-full-name") || email,
-      );
-    } catch {}
-    await db().batch([
-      statement(
-        "INSERT OR IGNORE INTO schools (id,name,code,created_at) VALUES (?,?,?,?)",
-        SCHOOL.id,
-        SCHOOL.name,
-        SCHOOL.code,
-        now(),
-      ),
-      statement(
-        "INSERT OR IGNORE INTO users (id,school_id,email,name,role,student_id,class_ids,active,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-        id,
-        schoolId,
-        email,
-        name,
-        owner ? "admin" : invite.role,
-        invite?.student_id || null,
-        invite?.class_ids || "[]",
-        1,
-        now(),
-      ),
-    ]);
-    u = await first("SELECT * FROM users WHERE id=?", id);
-    if (owner) await initialize(u);
-    await audit(u, "Log masuk pertama", id, { role: u.role });
-  }
-  if (!u.active) fail("Akaun dinyahaktifkan.", 403);
-  if (u.role === "student" && u.student_id) {
-    let current = u.student_id;
-    const seen = new Set();
-    while (!seen.has(current)) {
-      seen.add(current);
-      const s = await first(
-        "SELECT merged_into FROM students WHERE id=? AND school_id=?",
-        current,
-        u.school_id,
-      );
-      if (!s?.merged_into) break;
-      current = s.merged_into;
-    }
-    u = { ...u, student_id: current };
-  }
-  return u;
+  return authenticate(request, env.DB);
 }
 export async function initialize(u: any) {
   await db().batch([
@@ -617,20 +554,13 @@ export const filtersFrom = (url: URL) =>
     ].map((k) => [k, url.searchParams.get(k) || ""]),
   );
 export function metrics(data: any, filters: any) {
-  filters = {
-    ...filters,
-    dataset:
-      filters.dataset ||
-      data.import_batches.filter((b: any) => b.status === "active").at(-1)
-        ?.dataset,
-  };
-  return aggregate({
-    students: data.students,
-    rows: data.ains_summaries,
-    batches: data.import_batches,
-    rule: data.rule,
-    filters,
-  });
+  const base = {students:data.students, rows:data.ains_summaries, batches:data.import_batches, rule:data.rule};
+  const annual=aggregate({...base,filters});
+  const lifetime=aggregate({...base,filters:{classId:filters.classId,student:filters.student}});
+  const currentYear=new Date().getUTCFullYear();
+  const current=aggregate({...base,filters:{classId:filters.classId,student:filters.student,year:String(currentYear)}});
+  const years=[...new Set(data.import_batches.filter((b:any)=>b.status==='active'&&b.year).map((b:any)=>b.year))].sort();
+  return {...annual,lifetime,currentYear,current,yearly:years.map(year=>({year,...aggregate({...base,filters:{classId:filters.classId,student:filters.student,year:String(year)}})}))};
 }
 export async function studentAccess(u: any, id: string) {
   let s = await first(
@@ -764,6 +694,9 @@ export async function mutation(u: any, path: string, p: any) {
       school,
     );
     if (!b || b.status !== "active") fail("Kelompok tidak aktif.");
+    const sourceRows=await all("SELECT raw FROM ains_summaries WHERE batch_id=? AND school_id=?",id,school);
+    const sourceYears=new Set(sourceRows.map((r:any)=>JSON.parse(r.raw).year).filter(Boolean).map(Number));
+    if(sourceYears.size>1 || (sourceYears.size===1&&!sourceYears.has(Number(p.year)))) fail("Tahun pengesahan bercanggah dengan tahun sumber.");
     const scope = {
       ...p,
       year: Number(p.year),
@@ -859,6 +792,14 @@ export async function mutation(u: any, path: string, p: any) {
     });
     return { ok: true };
   }
+  if (path === "student/archive") {
+    requireRole(u, ["admin"]);
+    await studentAccess(u, p.id);
+    if (typeof p.archived !== "boolean") fail("Status arkib tidak sah.");
+    await run("UPDATE students SET archived_at=?,updated_at=? WHERE id=? AND school_id=?", p.archived ? at : null, at, p.id, school);
+    await audit(u, p.archived ? "Arkib murid" : "Pulih murid", p.id);
+    return {id:p.id};
+  }
   if (path === "student") {
     requireRole(u, ["admin"]);
     if (p.id) await studentAccess(u, p.id);
@@ -888,7 +829,7 @@ export async function mutation(u: any, path: string, p: any) {
         required(p.name, "Nama murid"),
         p.class_id || null,
         p.academic_year ? Number(p.academic_year) : null,
-        ["current", "former", "unconfirmed"].includes(p.status)
+        ["current", "former", "transferred", "unconfirmed"].includes(p.status)
           ? p.status
           : "unconfirmed",
         text(p.member_id) || null,
@@ -904,7 +845,7 @@ export async function mutation(u: any, path: string, p: any) {
         required(p.name, "Nama murid"),
         p.class_id || null,
         p.academic_year ? Number(p.academic_year) : null,
-        p.status || "unconfirmed",
+        ["current", "former", "transferred", "unconfirmed"].includes(p.status) ? p.status : "unconfirmed",
         text(p.member_id) || null,
         at,
         at,

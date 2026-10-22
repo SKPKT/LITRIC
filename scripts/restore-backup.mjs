@@ -1,3 +1,4 @@
+import {validateBackup} from "./validate-backup.mjs";
 import fs from "node:fs";
 import path from "node:path";
 const [input, output] = process.argv.slice(2);
@@ -6,6 +7,7 @@ if (!input || !output)
     "Usage: node scripts/restore-backup.mjs backup.json reviewed-restore.sql",
   );
 const dump = JSON.parse(fs.readFileSync(input, "utf8"));
+validateBackup(dump);
 if (dump.version !== 1 || !dump.school || !dump.tables)
   throw new Error("Unsupported backup.");
 const snapshots = fs
@@ -57,7 +59,7 @@ if (Object.keys(dump.tables).some((t) => !order.includes(t)))
     "Backup contains an unmapped table. Refusing an incomplete restore.",
   );
 const sql = [
-  "-- LITRIX reviewed restore into a NEW, migrated database only.",
+  "-- LITRIC reviewed restore into a NEW, migrated database only.",
   "-- Existing records are never overwritten. Copy R2 evidence/source objects separately.",
 ];
 let count = 0;
@@ -76,7 +78,7 @@ for (const table of order) {
     count++;
   }
 }
-fs.writeFileSync(path.resolve(output), sql.join("\n") + "\n", { flag: "wx" });
+fs.writeFileSync(path.resolve(output), sql.join("\n") + "\n", { flag: "wx", mode: 0o600 });
 console.log(
   `Prepared ${count} inserts for ${dump.school}. Review the SQL, migrate a new database, then apply. No database was modified.`,
 );

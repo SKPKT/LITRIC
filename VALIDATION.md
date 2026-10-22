@@ -1,64 +1,52 @@
-# LITRIC — keputusan pengesahan
+# Keputusan validasi LITRIC V2
 
-21 Oktober 2026. Keluaran kod 1.1.0. Penjenamaan dan konfigurasi migrasi disediakan daripada aplikasi asal. **Sudah diterbitkan** selepas pemilik memberikan repo dan mengizinkan repo LITRIC menjadi Public. Frontend Pages dan backend peribadi berjaya diterbitkan; sambungan sesi pentadbir sebenar berjaya memuatkan dashboard.
+Tarikh: 22 Oktober 2026 (Asia/Kuala_Lumpur). Sasaran ialah React + API Cloudflare Workers, SQLite Durable Object persendirian dan D1 pada akaun sekolah. Tiada perubahan kepada backend Sites lama atau pemindahan rekod murid sebenar.
 
-## Keputusan sebenar
+## Semakan automatik
 
-| Semakan | Keputusan |
+| Semakan | Hasil |
 |---|---|
-| Checkout peribadi: `npm test` | **48 lulus**, 0 gagal. Termasuk kawalan lapan sumber sebenar, pengiraan, peranan, sambungan Pages dan had badan permintaan. |
-| Sumber awam: `npm test` | **46 lulus**, 2 dilangkau dengan sebab jelas kerana sumber peribadi tidak disertakan; 0 gagal. |
-| TypeScript | `tsc --noEmit` lulus pada checkout asal dan eksport awam. |
-| Binaan backend | `npm run build` lulus; route `/`, `/api/:path+`, `/bridge`, `/verify/:token`. Tiada migrasi skema baharu. |
-| GitHub Actions | Ujian, privasi, TypeScript, binaan, upload artifact, deployment dan semakan URL produksi lulus pada run `39557357386` (percubaan semula selepas Pages diaktifkan). |
-| Binaan Pages | `npm run build:pages` lulus pada checkout asal dan eksport awam. Entry React yang sama, base tepat `/LITRIC/`, hash routing, 404 fallback, favicon/manifest LITRIC. |
-| HTTP Pages tempatan | Index/laluan hash ketika refresh dan **13 permintaan aset** memberi 200; termasuk JavaScript, CSS, fon, ikon dan manifest. |
-| API backend terbina | **61 respons API disahkan** pada Worker D1/R2 tempatan, termasuk penapis tahun/kelas, import semula, profil, sijil/laporan dan penolakan akses. |
-| Privasi frontend | Tiada seed, nama/pengecam murid asal, header identiti pelayan, sumber backend, pangkalan data, CSV/XLSX sekolah atau source map dalam `dist-pages`. |
-| Sumber awam | Seed kosong, tiada sejarah Git peribadi atau fail rahsia/data sekolah. Satu CSV fixture sintetik dibenarkan hanya dengan hash kandungan yang disemak. |
-| CORS | Permintaan API langsung dengan Origin `https://skpkt.github.io` ditolak 403; tiada CORS permisif. Sambungan menggunakan panggilan same-origin dalam tetingkap backend. |
-| Kebergantungan produksi | `npm audit --omit=dev`: **0 advisori diketahui** pada semakan ini; bukan jaminan tiada kelemahan. |
-| PDF/Excel | PDF sijil A4 landskap dan laporan program dirender dengan Poppler serta diperiksa secara visual. Penjenamaan, nama penuh, tagline, QR dan imej bukti hadir. Excel dibaca semula: jumlah sepadan dan pencipta `LITRIC`. |
+| Unit/domain/parser/theme/config/setup | 53 lulus, 0 gagal; 2 dataset peribadi sengaja skip kerana tidak dibundel dalam sumber awam. |
+| TypeScript | Lulus. |
+| Production frontend + imbasan bundle | Lulus; tiada Sites login/API/bridge atau password hash dalam output statik. |
+| Wrangler dry run | Lulus dengan binding ASSETS, DB dan SCHOOL_SERVICE. |
+| Worker/Durable Object/D1 integration | 111 semakan lulus pada runtime terasing, termasuk bootstrap pelayan, first-login gate, protected source download dan backup/restore. |
+| Imbasan sumber awam | Lulus; seed kosong, fixture sintetik, tiada credential atau input murid peribadi. |
+| D1 baharu sekolah | 0000/0001/0002 diterapkan; tiada restore data produksi. |
 
-Ujian menggunakan storan tempatan sahaja. Tiada rekod produksi dipadam, dipindah atau diubah. Sandaran kod/tag pemulihan asal disimpan secara peribadi. Format sandaran, 26 jadual, ID sekolah/pengguna dan migrasi terdahulu dikekalkan. Pemulihan ke SQLite baharu dengan foreign key dan perbandingan 26 jadual telah disahkan pada keluaran asal; penjenamaan ini tidak mengubah format itu.
+Liputan pengiraan meliputi semua sempadan bintang 143/144/287/288/431/432/575/576/719/720, identiti kekal, tahun bebas, snapshot pengganti, event pendua, overlap antara dataset, tempoh tidak diketahui, rollback dan rekod belum disahkan. Restore backup sintetik diuji ke database terasing: kiraan jadual, foreign keys dan 400 bacaan kekal sama.
 
-## Sempadan NILAM yang diuji
+## Ujian pada URL Cloudflare sebenar
 
-| Bacaan diluluskan | Bintang | Markah PAJSK konfigurasi |
-|---|---|---|
-| 143 | 0 — Belum Mencapai 1 Bintang | Tiada / NULL |
-| 144, 287 | 1 | 3 |
-| 288, 431 | 2 | 4 |
-| 432, 575 | 3 | 5 |
-| 576, 719 | 4 | 6 |
-| 720, 900 | 5 | 7 |
+URL: **https://litric-pilot.g-18197853.workers.dev**. Login kini diaktifkan; mod lama yang menyekat login bukan lagi status live semasa. Backend scrypt berjalan dalam SQLite Durable Object pada Workers Free. Tiada pembelian atau pertukaran pelan.
 
-Peraturan boleh dikonfigurasi dan belum diperakui terhadap syarat rasmi semasa. Tahun/tempoh dan kelayakan kelompok perlu disahkan sebelum bintang dikira. Tahun berlainan tidak digabung secara senyap. Snapshot kumulatif menggantikan asas terdahulu; pendua dan ID peristiwa berulang tidak menambah bacaan. Bacaan sekolah/SMARTLIB kekal berasingan daripada kelulusan rasmi AINS.
+Versi deployment akhir semasa semakan: `d19ae000-deab-42ff-b02c-82fa68bb2c8f`. Selepas deploy ini, semakan berasingan mengesahkan login 200, sumber import tanpa sesi 401, muat turun sumber dengan sesi 200 (satu baris sekolah), logout 200 dan token dibatalkan 401. Halaman frontend, health dan penolakan API tanpa sesi turut diperiksa semula. Setup secret kemudian boleh menghasilkan versi Cloudflare baharu tanpa perubahan kod.
 
-## Liputan perjalanan pengguna
+Script operator `scripts/test-live-pilot.mjs` dijalankan dengan kebenaran data sintetik, bukannya dalam CI. Ia menjana akaun QA sementara dan password rawak tanpa mencetaknya, menggunakan D1 sekolah baharu sahaja. 44 semakan HTTP dan assertion kandungan berikut lulus:
 
-| Perjalanan | Bukti / had |
-|---|---|
-| Log masuk pentadbir | Identiti simulasi dipercayai diuji pada Worker tempatan; Sesi pentadbir berizin yang sudah log masuk juga berjaya menyambung melalui Pages; aliran OAuth akaun baharu belum diuji. |
-| Dashboard | API state/agregat, respons aplikasi dan binaan disahkan. Dashboard sebenar melalui Pages diperiksa secara visual; jumlah sumber AINS kekal 20 identiti / 362 bahan dilaporkan dan tempoh belum disahkan. |
-| Import AINS dan pendua | CSV/XLSX sumber disemak; import API, kandungan berulang, snapshot, peristiwa bertindih/berulang serta rollback/pulih lulus. |
-| Profil murid | State yang dihadkan kepada guru/murid serta padanan/gabungan identiti lulus. |
-| Tahun / kelas | Unit tahun berasingan dan API penapis lulus; kelas tidak dibenarkan tidak memulangkan profil. |
-| Bintang NILAM | Semua 10 sempadan yang diminta lulus; markah sebelum 144 kekal NULL. |
-| Laporan dan sijil | Generasi/akses PDF, Excel dan QR lulus; sijil/laporan program diperiksa secara visual. |
-| Backend berizin | 401 tanpa identiti; 403 bagi tindakan/peranan/kelas/origin tidak dibenarkan. Pelawat tanpa log masuk tidak boleh mendapatkan laporan, sandaran atau pengesahan sijil. |
-| Sambungan frontend | Kod transport sebenar diuji: window/origin/channel palsu diabaikan, JSON/fail/byte PDF dihantar, penutupan gagal selamat, pop-up disekat boleh dicuba semula. Sambungan pelayar sebenar menggunakan sesi pentadbir sedia ada lulus; OAuth baharu dan polisi tetingkap pada mobile masih perlu disahkan. |
-| Mobile/tablet | CSS responsif, fon lebih jelas, fokus, kontras dan reduced-motion disediakan. Visual, pop-up, kamera dan pembaca skrin pada peranti sebenar belum disahkan. |
-| Refresh route | Hash route diuji melalui HTTP tempatan; path mempunyai fallback. Navigasi hash melalui Pages sebenar turut berjaya; refresh kekal pada entry statik dan memerlukan sambungan backend semula. |
-| GitHub Pages awam | **Diterbitkan dan disahkan** di `https://skpkt.github.io/LITRIC/`; index, JS, CSS, favicon dan manifest memberi 200. Backend peribadi juga dilaporkan berjaya oleh Sites. |
+- Tanpa sesi 401, password salah 401, login sementara 200 dan akses data sementara 428.
+- Tukar password pertama berjaya, sesi lama 401 dan login baharu berjaya.
+- XLSX sebenar dijana dalam memori dan diparse melalui parser produksi. Setiap fail mengandungi ABA6052, ABA60520 serta sekolah lain; hanya ABA6052 diterima. Semakan preview server turut menolak dua baris luar.
+- Tiga tahun bebas yang disahkan: 120 + 180 + 100 = **400 bacaan, 2 bintang, 32 lagi ke 432**.
+- Fail pendua tidak ditambah. Ringkasan bertindih menghalang kelayakan; rollback memulihkan 400.
+- Status berpindah, arkib dan pulih mengekalkan identiti dan sejarah bacaan.
+- Logout membatalkan sesi, expiry server memberi 401 dan percubaan login ke-11 memberi 429.
 
-Polisi URL menghalang preview tempatan pada binaan asal. Selepas penerbitan, halaman login dan dashboard Pages sebenar dapat diperiksa melalui pelayar; halaman SMARTLIB menunjukkan status belum disambungkan seperti sepatutnya. HTTP/API/unit tidak dianggap bukti pengesahan OAuth akaun baharu atau peranti mudah alih.
+Keputusan HTTP selamat dieksport tanpa credential. Selepas browser QA, credential QA dibatalkan, import sintetik dibatalkan secara boleh pulih dan murid sintetik diarkibkan; sejarah ujian kekal bagi audit tanpa menyumbang kepada jumlah bacaan operasi. Ini bukan data sekolah sebenar. Jangan gunakan akaun QA untuk operasi sekolah.
 
-## Perkara tertangguh
+Browser live turut mengesahkan dashboard, direktori, import/sejarah dan Bintang NILAM melalui sesi QA tanpa ChatGPT. Sidebar mempunyai empat modul sahaja. Jadual bintang menunjukkan 2023/2024/2025, lifetime 400, 2 bintang dan baki 32. Screenshot yang dibekalkan ialah data sintetik pada URL live.
 
-1. Ujian pada peranti mobile/tablet sebenar, OAuth akaun baharu, sesi luput serta akaun guru/murid sebenar masih perlu dilengkapkan. Semua laman pada origin `skpkt.github.io` mesti dipercayai; lihat SECURITY_REVIEW.md.
-2. SMARTLIB sebenar, URL/kelayakan katalog, tahun/tempoh sumber, kelas/enrolmen dan rujukan rasmi PAJSK masih memerlukan pengesahan sekolah.
-3. Keperluan semakan pull request pada main perlu dikonfigurasi sebelum kerjasama berbilang pembangun. Persekitaran Pages yang dijana mengehadkan deployment kepada main.
-4. Modul Excel dimuatkan secara dinamik dan masih besar; backend build memberi amaran chunk >500 kB. Ini bukan kegagalan build. Kapasiti, backup berjadual, pemantauan dan pengekalan data diterangkan dalam README/SECURITY_REVIEW.
+## Paparan dan aksesibiliti
 
-URL produksi disahkan: https://skpkt.github.io/LITRIC/. Kejayaan deployment tidak dianggap sebagai audit aksesibiliti formal atau pengesahan rasmi NILAM/PAJSK.
+Production UI telah diperiksa pada runtime Worker + ASSETS + D1 tempatan. Desktop 1440x1000, viewport 390px dan 320px tiada overflow dokumen; KPI masing-masing tiga/dua/satu kolum. Dark dan high contrast diperiksa secara visual. Ini emulasi browser, bukan ujian Android fizikal.
+
+Ujian token memastikan kontras teks 4.5:1 untuk light/dark/high-contrast dan endpoint gradient KPI. Amber menggunakan teks gelap. Reduced-motion mematikan animasi/transisi. Semakan DOM terarah mendapati satu h1 dan tiada input/select/textarea tanpa label pada import. Ini bukan audit screen reader penuh atau pensijilan aksesibiliti.
+
+## Belum selesai
+
+- Pemilik perlu menjalankan bootstrap GPM tersembunyi, menukar password pertama dan menerima login sebenar GPM. Kejayaan QA tidak menggantikan penerimaan pemilik.
+- GitHub App kini dipasang untuk SKPKT/LITRIC sahaja. Masalah 403 dipulihkan dan penciptaan feature branch berjaya. Pull request masih memerlukan semakan manusia; tiada merge ke main dilakukan.
+- GitHub Actions memerlukan token Cloudflare terskop dan environment/variables sekolah; automasi produksi belum diaktifkan.
+- Backup D1/R2 asal, migrasi rekod sebenar, parity produksi, Android fizikal, ujian beban dan cutover belum dilakukan.
+
+Rintis berlogin dan empat modul dengan data sintetik telah diuji. Sistem belum diterima untuk operasi data sebenar. Ikuti DEPLOYMENT.md untuk setup GPM, semakan manusia dan proses backup/restore berizin.
