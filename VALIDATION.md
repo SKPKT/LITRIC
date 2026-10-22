@@ -6,15 +6,17 @@ Tarikh: 22 Oktober 2026 (Asia/Kuala_Lumpur). Sasaran ialah React + API Cloudflar
 
 | Semakan | Hasil |
 |---|---|
-| Unit/domain/parser/theme/config/setup | 53 lulus, 0 gagal; 2 dataset peribadi sengaja skip kerana tidak dibundel dalam sumber awam. |
+| Unit/domain/parser/theme/config/setup | 55 lulus, 0 gagal; 2 dataset peribadi sengaja skip kerana tidak dibundel dalam sumber awam. |
 | TypeScript | Lulus. |
 | Production frontend + imbasan bundle | Lulus; tiada Sites login/API/bridge atau password hash dalam output statik. |
 | Wrangler dry run | Lulus dengan binding ASSETS, DB dan SCHOOL_SERVICE. |
-| Worker/Durable Object/D1 integration | 111 semakan lulus pada runtime terasing, termasuk bootstrap pelayan, first-login gate, protected source download dan backup/restore. |
+| Worker/Durable Object/D1 integration | 113 semakan lulus pada runtime terasing, termasuk bootstrap pelayan, preflight tanpa password bagi pasangan manual, first-login gate, protected source download dan backup/restore. |
 | Imbasan sumber awam | Lulus; seed kosong, fixture sintetik, tiada credential atau input murid peribadi. |
 | D1 baharu sekolah | 0000/0001/0002 diterapkan; tiada restore data produksi. |
 
 Liputan pengiraan meliputi semua sempadan bintang 143/144/287/288/431/432/575/576/719/720, identiti kekal, tahun bebas, snapshot pengganti, event pendua, overlap antara dataset, tempoh tidak diketahui, rollback dan rekod belum disahkan. Restore backup sintetik diuji ke database terasing: kiraan jadual, foreign keys dan 400 bacaan kekal sama.
+
+Setup manual: tiket rawak, padanan hash, skop origin, tempoh 14 minit, penolakan expiry tamat/terlalu jauh/dalam saat diuji. Round trip Windows DPAPI CurrentUser diperiksa pada mesin ini; fail ciphertext tidak mengandungi kunci mentah. Tiada password diperlukan bagi semakan ini. Setup GPM sebenar masih menunggu input peribadi pemilik.
 
 ## Ujian pada URL Cloudflare sebenar
 

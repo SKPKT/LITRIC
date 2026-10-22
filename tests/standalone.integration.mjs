@@ -80,6 +80,7 @@ try {
   }
   await call('/api/auth/bootstrap', { password: temporary }, 404);
   await call('/api/auth/bootstrap', { password: temporary }, 404, { headers: { 'X-Litric-Setup-Key': 'a'.repeat(64) } });
+  expected((await call('/api/auth/bootstrap', {}, 400, { headers: { 'X-Litric-Setup-Key': setupKey } })).error.startsWith('Kata laluan mesti'), true);
   expected(await call('/api/auth/bootstrap', { password: temporary }, 200, { headers: { 'X-Litric-Setup-Key': setupKey } }), { ok: true, mustChange: true });
   await call('/api/auth/bootstrap', { password }, 409, { headers: { 'X-Litric-Setup-Key': setupKey } });
   const account = await db.prepare("SELECT * FROM auth_accounts WHERE username='GPM'").first();

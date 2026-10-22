@@ -88,6 +88,14 @@ Prompt meminta kata laluan sementara dua kali tanpa echo, sekurang-kurangnya 10 
 
 Untuk ujian tempatan sahaja, `npm run bootstrap:admin -- --local` masih tersedia. Jangan jalankan bootstrap dalam GitHub Actions.
 
+### Pemasangan secret secara manual melalui dashboard
+
+Jika terminal tidak mempunyai sesi Wrangler tetapi pemilik sudah membuka dashboard Cloudflare, gunakan `node scripts/bootstrap-manual.mjs --prepare` pada mesin Windows sekolah. Ia menjana kunci rawak 256-bit dan tempoh 14 minit (had pelayan 15 minit). Hanya hash SHA-256, timestamp Unix dalam **milisaat** dan masa tamat Malaysia dicetak. Kunci mentah disulitkan menggunakan Windows DPAPI CurrentUser dalam profil tempatan, bukan repository; tiada password disimpan dalam tiket. Pengguna Windows yang sama perlu melengkapkan setup.
+
+Dalam Worker sekolah → Settings → Variables and Secrets → Add, pilih **Secret** bagi kedua-dua `LITRIC_BOOTSTRAP_HASH` dan `LITRIC_BOOTSTRAP_EXPIRES_AT`. Masukkan nilai yang baru dijana tanpa tanda petik; timestamp ialah nombor 13 digit, bukan saat atau teks tarikh ISO. Tekan **Deploy**. Nilai lama tidak boleh dicampur dengan pasangan baharu. Jangan mengubah database atau konfigurasi backend Sites asal.
+
+Kemudian jalankan `node scripts/bootstrap-manual.mjs` pada akaun Windows yang menyediakan tiket. Ia mengesahkan pasangan melalui endpoint pelayan sebelum meminta password tersembunyi, lalu menghantar password terus melalui HTTPS untuk hashing scrypt pelayan. Ia tidak menggunakan Wrangler pada langkah ini. Selepas setup berjaya, tiket tempatan dipadam; log masuk GPM, tukar password pertama dan padam kedua-dua secret setup di Cloudflare. Kewujudan GPM dan masa tamat tetap menghalang penggunaan semula. Jika tempoh tamat sebelum selesai, jana semula dan gantikan **kedua-dua** nilai.
+
 Pada log masuk pertama, GPM mesti memilih kata laluan baharu sekurang-kurangnya 12 aksara. Semua sesi sementara dibatalkan selepas perubahan dan pentadbir log masuk semula. Tiada langkah bootstrap di GitHub Actions.
 
 ## 5. Deploy awal secara manual ke Worker baharu
