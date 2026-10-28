@@ -69,3 +69,11 @@ next-env.d.ts
 *.xlsx
 *.zip
 *.tar
+
+/dist-api/
+/standalone/.wrangler/
+
+/standalone/dist-api/
+
+/dist-worker/
+/standalone/wrangler.generated.jsonc

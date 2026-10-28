@@ -11,8 +11,11 @@ import {
   validScope,
   validRule,
   star,
+  identityKey,
 } from "./domain.mjs";
+import { planIdentities } from './student-identity.mjs';
 import seed from "./seed-data.json";
+import {authenticate} from "./standalone-auth.mjs";
 import { prepareEvents } from "./events.mjs";
 
 export const now = () => new Date().toISOString();
@@ -63,71 +66,7 @@ export async function audit(
   );
 }
 export async function auth(request: Request) {
-  const id = request.headers.get("oai-authenticated-user-id"),
-    email = request.headers.get("oai-authenticated-user-email")?.toLowerCase();
-  if (!id || !email) fail("Sila log masuk dengan ChatGPT.", 401);
-  let u = await first("SELECT * FROM users WHERE id=?", id);
-  if (!u) {
-    const local =
-      ["127.0.0.1", "localhost"].includes(new URL(request.url).hostname) &&
-      id === "local_seedy";
-    const owner =
-      email === ((env as any).LITRIC_ADMIN_EMAIL || (env as any).LITRIX_ADMIN_EMAIL)?.toLowerCase() || local;
-    const invite = await first(
-      "SELECT * FROM invitations WHERE email=?",
-      email,
-    );
-    if (!owner && !invite)
-      fail("Akaun belum diberi akses oleh pentadbir sekolah.", 403);
-    const schoolId = owner ? SCHOOL.id : invite.school_id;
-    let name = email;
-    try {
-      name = decodeURIComponent(
-        request.headers.get("oai-authenticated-user-full-name") || email,
-      );
-    } catch {}
-    await db().batch([
-      statement(
-        "INSERT OR IGNORE INTO schools (id,name,code,created_at) VALUES (?,?,?,?)",
-        SCHOOL.id,
-        SCHOOL.name,
-        SCHOOL.code,
-        now(),
-      ),
-      statement(
-        "INSERT OR IGNORE INTO users (id,school_id,email,name,role,student_id,class_ids,active,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
-        id,
-        schoolId,
-        email,
-        name,
-        owner ? "admin" : invite.role,
-        invite?.student_id || null,
-        invite?.class_ids || "[]",
-        1,
-        now(),
-      ),
-    ]);
-    u = await first("SELECT * FROM users WHERE id=?", id);
-    if (owner) await initialize(u);
-    await audit(u, "Log masuk pertama", id, { role: u.role });
-  }
-  if (!u.active) fail("Akaun dinyahaktifkan.", 403);
-  if (u.role === "student" && u.student_id) {
-    let current = u.student_id;
-    const seen = new Set();
-    while (!seen.has(current)) {
-      seen.add(current);
-      const s = await first(
-        "SELECT merged_into FROM students WHERE id=? AND school_id=?",
-        current,
-        u.school_id,
-      );
-      if (!s?.merged_into) break;
-      current = s.merged_into;
-    }
-    u = { ...u, student_id: current };
-  }
-  return u;
+  return authenticate(request, env.DB);
 }
 export async function initialize(u: any) {
   await db().batch([
@@ -193,6 +132,9 @@ export async function importBatch(u: any, input: any, options: any = {}) {
     u.school_id,
   );
   const aliases = new Map(known.map((a) => [a.source_id, a]));
+  const people = await all('SELECT * FROM students WHERE school_id=?', u.school_id);
+  const identityPlan = planIdentities(review.rows, people, known, input.identityLinks || {});
+  if(identityPlan.issues.length) fail('Padanan identiti memerlukan pengesahan dalam pratonton import. Tiada profil atau bacaan ditambah.',409);
   if (env.BUCKET)
     await env.BUCKET.put(
       key,
@@ -245,7 +187,10 @@ export async function importBatch(u: any, input: any, options: any = {}) {
     }
     const sourceId = r.sourceId || `missing:${id}:${r.rowNumber}`;
     let alias = aliases.get(sourceId);
-    let studentId = alias?.student_id;
+    const identity = identityPlan.targets.get(r.rowNumber);
+    let studentId = identity?.studentId || alias?.student_id;
+    if(identity?.manual && r.status==='review' && r.issue?.startsWith('Pengecam sumber tiada')){r.status='accepted';r.issue='';review.stats.review--;review.stats.accepted++;}
+    if(identity?.manual && alias){stmts.push(statement('UPDATE student_aliases SET verified=? WHERE id=? AND school_id=?',r.sourceId?1:0,alias.id,u.school_id));}
     if (!studentId) {
       studentId = uid();
       stmts.push(
@@ -258,7 +203,10 @@ export async function importBatch(u: any, input: any, options: any = {}) {
           at,
           at,
         ),
-        statement(
+      );
+    }
+    if(!alias){
+      stmts.push(statement(
           "INSERT INTO student_aliases (id,school_id,student_id,source_id,original_name,verified) VALUES (?,?,?,?,?,?)",
           uid(),
           u.school_id,
@@ -266,12 +214,11 @@ export async function importBatch(u: any, input: any, options: any = {}) {
           sourceId,
           r.name,
           r.sourceId ? 1 : 0,
-        ),
-      );
+        ));
       alias = { student_id: studentId, name: r.name };
       aliases.set(sourceId, alias);
     }
-    if (norm(alias.name) !== norm(r.name) && r.status !== "duplicate") {
+    if (!identity?.manual && norm(alias.name) !== norm(r.name) && r.status !== "duplicate") {
       if (r.status === "accepted") {
         review.stats.accepted--;
         review.stats.review++;
@@ -387,8 +334,12 @@ export async function importBatch(u: any, input: any, options: any = {}) {
     filename: input.filename,
     stats: review.stats,
     fingerprint,
+    identityDecisions: Object.entries(input.identityLinks||{}).map(([row,v]:any)=>({row,studentId:v.studentId,reason:v.reason})),
   });
   return { batchId: id, stats: { ...review.stats, ...options.eventStats } };
+}
+export async function importIdentityPlan(u:any, rows:any[]) {
+  return planIdentities(rows, await all('SELECT * FROM students WHERE school_id=?',u.school_id), await all('SELECT * FROM student_aliases WHERE school_id=?',u.school_id));
 }
 export async function eventPreview(u: any, input: any) {
   requireRole(u, ["admin"]);
@@ -617,20 +568,13 @@ export const filtersFrom = (url: URL) =>
     ].map((k) => [k, url.searchParams.get(k) || ""]),
   );
 export function metrics(data: any, filters: any) {
-  filters = {
-    ...filters,
-    dataset:
-      filters.dataset ||
-      data.import_batches.filter((b: any) => b.status === "active").at(-1)
-        ?.dataset,
-  };
-  return aggregate({
-    students: data.students,
-    rows: data.ains_summaries,
-    batches: data.import_batches,
-    rule: data.rule,
-    filters,
-  });
+  const base = {students:data.students, rows:data.ains_summaries, batches:data.import_batches, rule:data.rule};
+  const annual=aggregate({...base,filters});
+  const lifetime=aggregate({...base,filters:{classId:filters.classId,student:filters.student}});
+  const currentYear=new Date().getUTCFullYear();
+  const current=aggregate({...base,filters:{classId:filters.classId,student:filters.student,year:String(currentYear)}});
+  const years=[...new Set(data.import_batches.filter((b:any)=>b.status==='active'&&b.year).map((b:any)=>b.year))].sort();
+  return {...annual,lifetime,currentYear,current,yearly:years.map(year=>({year,...aggregate({...base,filters:{classId:filters.classId,student:filters.student,year:String(year)}})}))};
 }
 export async function studentAccess(u: any, id: string) {
   let s = await first(
@@ -695,10 +639,11 @@ export async function mutation(u: any, path: string, p: any) {
           })),
         ],
         rows: review.rows.slice(0, 50),
+        identityIssues: (await importIdentityPlan(u, review.rows)).issues,
       };
     }
     const r = await reviewRows(p.rows, school);
-    return { stats: r.stats, errors: r.errors, rows: r.rows.slice(0, 50) };
+    return { stats: r.stats, errors: r.errors, rows: r.rows.slice(0, 50), identityIssues: (await importIdentityPlan(u,r.rows)).issues };
   }
   if (path === "import/commit")
     return p.granularity === "event" ? importEvents(u, p) : importBatch(u, p);
@@ -764,6 +709,9 @@ export async function mutation(u: any, path: string, p: any) {
       school,
     );
     if (!b || b.status !== "active") fail("Kelompok tidak aktif.");
+    const sourceRows=await all("SELECT raw FROM ains_summaries WHERE batch_id=? AND school_id=?",id,school);
+    const sourceYears=new Set(sourceRows.map((r:any)=>JSON.parse(r.raw).year).filter(Boolean).map(Number));
+    if(sourceYears.size>1 || (sourceYears.size===1&&!sourceYears.has(Number(p.year)))) fail("Tahun pengesahan bercanggah dengan tahun sumber.");
     const scope = {
       ...p,
       year: Number(p.year),
@@ -859,68 +807,43 @@ export async function mutation(u: any, path: string, p: any) {
     });
     return { ok: true };
   }
+  if (path === "student/archive") {
+    requireRole(u, ["admin"]);
+    await studentAccess(u, p.id);
+    if (typeof p.archived !== "boolean") fail("Status arkib tidak sah.");
+    await run("UPDATE students SET archived_at=?,status=CASE WHEN ?=0 AND status IN ('former','graduated','transferred') THEN 'current' ELSE status END,updated_at=? WHERE id=? AND school_id=?", p.archived ? at : null, p.archived?1:0, at, p.id, school);
+    await audit(u, p.archived ? "Arkib murid" : "Pulih murid", p.id);
+    return {id:p.id};
+  }
   if (path === "student") {
     requireRole(u, ["admin"]);
     if (p.id) await studentAccess(u, p.id);
-    if (p.class_id) {
-      const c = await first(
-        "SELECT * FROM classes WHERE id=? AND school_id=?",
-        p.class_id,
-        school,
-      );
-      if (!c) fail("Kelas tidak sah.");
+    const existing = p.id ? await first('SELECT * FROM students WHERE id=? AND school_id=?', id, school) : null;
+    if(typeof p.name!=='string'||!p.name.trim()||p.name.trim().length>160||/[\x00-\x1f]/.test(p.name)) fail('Nama penuh murid diperlukan dan mesti tidak melebihi 160 aksara.');
+    const name=p.name.trim().replace(/\s+/g,' ');
+    const status=p.status||existing?.status||'current';
+    if(!['current','former','graduated','transferred','unconfirmed'].includes(status))fail('Status murid tidak sah.');
+    const year=p.academic_year?Number(p.academic_year):null;
+    if(year!==null&&(!Number.isInteger(year)||year<2000||year>2100))fail('Tahun akademik tidak sah.');
+    if(p.class_id && !await first('SELECT id FROM classes WHERE id=? AND school_id=?',p.class_id,school))fail('Kelas tidak sah.');
+    const sourceId=identityKey({source_id:p.source_id});
+    if(sourceId.length>200||/[\x00-\x1f]/.test(sourceId))fail('Pengecam AINS tidak sah.');
+    const alias=sourceId?await first('SELECT * FROM student_aliases WHERE school_id=? AND source_id=?',school,sourceId):null;
+    if(sourceId&&p.source_verified!==true)fail('Sahkan pengecam sumber AINS berdasarkan rekod sekolah.');
+    if(alias&&(await studentAccess(u,alias.student_id)).id!==id)fail('Pengecam AINS ini sudah dipautkan kepada profil lain. Gunakan Semak identiti.',409);
+    if(!existing){
+      const people=await all('SELECT * FROM students WHERE school_id=? AND merged_into IS NULL',school);
+      const duplicate=people.filter(s=>norm(s.name)===norm(name)&&String(s.class_id||'')===String(p.class_id||'')&&String(s.academic_year||'')===String(year||''));
+      if(duplicate.length && !(p.duplicate_confirmed===true&&typeof p.duplicate_reason==='string'&&p.duplicate_reason.trim().length>=10))fail('Profil dengan nama, kelas dan tahun yang sama sudah ada. Edit atau pulihkan profil tersebut; jika individu berbeza, sahkan bukti individu berbeza.',409);
     }
-    if (
-      p.academic_year &&
-      (!Number.isInteger(Number(p.academic_year)) ||
-        Number(p.academic_year) < 2000 ||
-        Number(p.academic_year) > 2100)
-    )
-      fail("Tahun akademik tidak sah.");
-    const s = await first(
-      "SELECT * FROM students WHERE id=? AND school_id=?",
-      id,
-      school,
-    );
-    if (s)
-      await run(
-        "UPDATE students SET name=?,class_id=?,academic_year=?,status=?,member_id=?,updated_at=? WHERE id=? AND school_id=?",
-        required(p.name, "Nama murid"),
-        p.class_id || null,
-        p.academic_year ? Number(p.academic_year) : null,
-        ["current", "former", "unconfirmed"].includes(p.status)
-          ? p.status
-          : "unconfirmed",
-        text(p.member_id) || null,
-        at,
-        id,
-        school,
-      );
-    else
-      await run(
-        "INSERT INTO students (id,school_id,name,class_id,academic_year,status,member_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
-        id,
-        school,
-        required(p.name, "Nama murid"),
-        p.class_id || null,
-        p.academic_year ? Number(p.academic_year) : null,
-        p.status || "unconfirmed",
-        text(p.member_id) || null,
-        at,
-        at,
-      );
-    if (p.class_id && p.academic_year)
-      await run(
-        "INSERT INTO student_class_history (id,school_id,student_id,class_id,year,created_at) VALUES (?,?,?,?,?,?)",
-        uid(),
-        school,
-        id,
-        p.class_id,
-        Number(p.academic_year),
-        at,
-      );
-    await audit(u, "Simpan murid", id);
-    return { id };
+    const inactive=['transferred','graduated','former'].includes(status);
+    const archived=inactive?(existing?.archived_at||at):existing&&existing.status!==status&&status==='current'?null:existing?.archived_at||null;
+    const stmts:any[]=[existing ? statement('UPDATE students SET name=?,class_id=?,academic_year=?,status=?,member_id=?,archived_at=?,updated_at=? WHERE id=? AND school_id=?',name,p.class_id||null,year,status,text(p.member_id,200)||null,archived,at,id,school) : statement('INSERT INTO students (id,school_id,name,class_id,academic_year,status,member_id,archived_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',id,school,name,p.class_id||null,year,status,text(p.member_id,200)||null,archived,at,at)];
+    if(sourceId)stmts.push(alias?statement('UPDATE student_aliases SET verified=1 WHERE id=? AND school_id=?',alias.id,school):statement('INSERT INTO student_aliases(id,school_id,student_id,source_id,original_name,verified) VALUES (?,?,?,?,?,1)',uid(),school,id,sourceId,name));
+    if(p.class_id&&year)stmts.push(statement('INSERT INTO student_class_history(id,school_id,student_id,class_id,year,created_at) SELECT ?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM student_class_history WHERE school_id=? AND student_id=? AND class_id=? AND year=?)',uid(),school,id,p.class_id,year,at,school,id,p.class_id,year));
+    await db().batch(stmts);
+    await audit(u,'Simpan murid',id,{sourceIdentifierVerified:!!sourceId,duplicateReason:p.duplicate_confirmed?text(p.duplicate_reason,1000):null});
+    return {id,message:'Maklumat murid berjaya disimpan.'};
   }
   if (path === "class") {
     requireRole(u, ["admin"]);
