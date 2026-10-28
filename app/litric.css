@@ -3553,3 +3553,13 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline-colo
 @media (min-width:951px) { .dashboard-kpis { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 .welcome-banner p { font-size:13px; max-width:620px; }
 .banner-link { color:var(--on-color); font-size:13px; text-decoration:underline; }
+.student-report-controls { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; padding:20px; border:1px solid var(--line); border-radius:18px; background:var(--surface); margin:16px 0; }
+.student-report-controls label { display:flex; flex-direction:column; gap:6px; min-width:0; font-weight:650; font-size:12px; }
+.student-report-controls input,.student-report-controls select { width:100%; min-width:0; min-height:44px; }
+.student-report-controls > button { align-self:end; min-height:44px; }
+.field input[type="checkbox"] { width:18px; min-width:18px; height:18px; min-height:18px; padding:0; }
+.field .checkbox { align-items:flex-start; overflow-wrap:anywhere; }
+.report-scope-note { grid-column:1/-1; margin:0; color:var(--muted); font-size:12px; }
+.identity-resolution { padding:16px; border:1px solid var(--line); border-radius:14px; background:var(--surface2); margin:12px 0; display:grid; gap:10px; }
+@media(max-width:760px){.student-report-controls{grid-template-columns:repeat(2,minmax(0,1fr));}.panel-head{flex-wrap:wrap;}.button-row{flex-wrap:wrap;}}
+@media(max-width:430px){.student-report-controls{grid-template-columns:minmax(0,1fr);padding:14px;}.form-grid{grid-template-columns:minmax(0,1fr);}}

@@ -8,6 +8,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { Panel, Badge, fmt, pretty, Modal } from "../litric";
+import { StudentReportControls, useStudentReport } from './student-report-controls';
 function Stat({ label, value, icon: Icon, sub }: any) {
   return (
     <article className="kpi">
@@ -203,6 +204,7 @@ export function IndependentDashboard({ ctx }: any) {
   );
 }
 export function LifetimeAchievements({ ctx }: any) {
+  const {filters,setFilters,report}=useStudentReport(ctx.data);
   const { data } = ctx,
     m = data.metrics,
     l = m.lifetime,
@@ -237,6 +239,7 @@ export function LifetimeAchievements({ ctx }: any) {
           </div>
         ))}
       </div>
+      <StudentReportControls data={data} filters={filters} setFilters={setFilters} notify={ctx.notify}/>
       <Panel
         title="Rekod bintang terkumpul"
         sub="Penapis tahun tidak memadam pencapaian tahun terdahulu"
@@ -262,19 +265,11 @@ export function LifetimeAchievements({ ctx }: any) {
               </tr>
             </thead>
             <tbody>
-              {l.students.map((s: any) => {
-                const history = m.yearly
-                  .map((y: any) => ({
-                    year: y.year,
-                    student: y.students.find((x: any) => x.id === s.id),
-                  }))
-                  .filter((y: any) => y.student);
-                const annual = history.find(
-                  (y: any) => y.year === m.currentYear,
-                )?.student?.eligible;
-                const previous = history
-                  .filter((y: any) => y.year < m.currentYear)
-                  .reduce(
+              {report.records.map((s: any) => {
+                const history = s.history.map((h:any)=>({year:h.year,student:{eligible:h.total,reported:h.reported}}));
+                const annual = s.annual;
+                const earlier = history.filter((y:any)=>y.year < report.year);
+                const previous = !earlier.length||earlier.some((y:any)=>y.student.eligible==null)?null:earlier.reduce(
                     (sum: number, y: any) => sum + (y.student.eligible || 0),
                     0,
                   );
@@ -306,13 +301,13 @@ export function LifetimeAchievements({ ctx }: any) {
                       ))}
                     </td>
                     <td>{annual == null ? "—" : fmt(annual)}</td>
-                    <td>{fmt(previous)}</td>
+                    <td>{previous==null?'Belum disahkan':fmt(previous)}</td>
                     <td>
-                      <b>{s.eligible == null ? "—" : fmt(s.eligible)}</b>
+                      <b>{s.total == null ? (s.hasAins?'Belum disahkan':'Tiada rekod AINS') : fmt(s.total)}</b>
                     </td>
                     <td>
                       {s.achievement.level == null ? (
-                        "Menunggu semakan"
+                        "Belum dapat disahkan"
                       ) : (
                         <>
                           <span className="gold-stars">
@@ -327,18 +322,7 @@ export function LifetimeAchievements({ ctx }: any) {
                       )}
                     </td>
                     <td>
-                      {l.blocked.includes(s.id)
-                        ? "Pertindihan sumber"
-                        : s.eligible == null
-                          ? "Belum disahkan"
-                          : history.some(
-                                (y: any) => y.student.eligible == null,
-                              ) ||
-                              l.batches.some(
-                                (b: any) => b.verification !== "verified" && data.ains_summaries.some((r:any)=>(r.canonical_id||r.student_id)===s.id&&r.batch_id===b.id),
-                              )
-                            ? "Jumlah disahkan sahaja; semakan berbaki"
-                            : "Disahkan"}
+                      {s.verification}
                     </td>
                   </tr>
                 );
@@ -346,7 +330,7 @@ export function LifetimeAchievements({ ctx }: any) {
             </tbody>
           </table>
         </div>
-        {!l.students.length && <p className="pad">Belum ada rekod AINS.</p>}
+        {!report.records.length && <p className="pad">Tiada murid sepadan dengan penapis.</p>}
       </Panel>
       {rules && (
         <Modal

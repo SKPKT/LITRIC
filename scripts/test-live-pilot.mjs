@@ -26,11 +26,13 @@ function sql(text) {
 }
 function cleanup(state) {
   if (state.origin !== origin || !state.username.startsWith('QA_')) throw new Error('QA ownership mismatch.');
+  if((state.extraStudents||[]).some(s=>!/^[-a-f0-9]{36}$/.test(s.id)||!s.name.startsWith('MURID QA SINTETIK ')))throw new Error('Additional QA identity mismatch.');
   sql(`DELETE FROM auth_sessions WHERE user_id=${q(state.id)};
 DELETE FROM auth_accounts WHERE user_id=${q(state.id)} AND username=${q(state.username)};
 UPDATE users SET active=0 WHERE id=${q(state.id)} AND name='PENTADBIR QA SINTETIK';
 UPDATE import_batches SET status='rolled_back',star_eligible=0 WHERE created_by=${q(state.id)} AND dataset IN (${q('QA-SINTETIK-' + state.id)},${q('QA-OVERLAP-' + state.id)});
-${state.studentId ? `UPDATE students SET archived_at=${q(new Date().toISOString())},status='transferred' WHERE id=${q(state.studentId)} AND name=${q(state.studentName)};` : ''}`);
+${state.studentId ? `UPDATE students SET archived_at=${q(new Date().toISOString())},status='transferred' WHERE id=${q(state.studentId)} AND name=${q(state.studentName)};` : ''}
+${(state.extraStudents||[]).map(s=>`UPDATE students SET archived_at=${q(new Date().toISOString())},status='transferred' WHERE id=${q(s.id)} AND name=${q(s.name)} AND school_id='ABA6052';`).join('\n')}`);
 }
 if (process.argv.includes('--cleanup')) {
   const state = JSON.parse(fs.readFileSync(path.join(dir, 'browser-qa.json'), 'utf8'));
@@ -82,6 +84,20 @@ INSERT OR IGNORE INTO star_rule_versions(id,school_id,thresholds,marks,certified
   const compiled = ts.transpileModule(parserSource, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
   const { parse } = await import('data:text/javascript;base64,' + Buffer.from(compiled).toString('base64'));
   const sourceId = 'qa-' + state.id;
+  const manual = await call('student',{name:state.studentName,academic_year:2026,status:'current',source_id:sourceId,source_verified:true});
+  state.studentId=manual.id;
+  assert.equal(manual.message,'Maklumat murid berjaya disimpan.');
+  await call('student',{name:state.studentName,academic_year:2026,status:'current'},409);
+  async function exportBook(query='',authorization=token,status=200){
+    const r=await fetch(origin+'/api/report?format=xlsx&'+query,{headers:{Origin:origin,...(authorization?{Authorization:'Bearer '+authorization}:{})}});
+    assert.equal(r.status,status);checks.push({route:'report/xlsx',status});if(status!==200)return;
+    assert.equal(r.headers.get('Cache-Control'),'no-store');
+    const w=new ExcelJS.Workbook();await w.xlsx.load(await r.arrayBuffer());assert.deepEqual(w.worksheets.map(s=>s.name),['Ringkasan Pencapaian','Sejarah Bacaan Tahunan','Statistik Sekolah']);return w;
+  }
+  await exportBook('', '',401);
+  const noAins=await exportBook('status=current&academicYear=2026');
+  const noRow=noAins.worksheets[0].getRows(8,noAins.worksheets[0].rowCount-7).find(r=>r.getCell(2).value===state.studentName);
+  assert.equal(noRow.getCell(7).value,'Tiada rekod AINS');assert.equal(noRow.getCell(8).value,'Belum dapat disahkan');
   const inputs = [];
   for (const [year, approved] of [[2023,120], [2024,180], [2025,100]]) {
     const workbook = new ExcelJS.Workbook(), sheet = workbook.addWorksheet('QA');
@@ -112,6 +128,12 @@ INSERT OR IGNORE INTO star_rule_versions(id,school_id,thresholds,marks,certified
   assert.equal(achievement.eligible, 400);
   assert.equal(achievement.achievement.level, 2);
   assert.equal(achievement.achievement.remaining, 32);
+  assert.equal(pupil.id,manual.id);
+  const book=await exportBook('status=current&academicYear=2026&star=2');
+  const pupilRow=book.worksheets[0].getRows(8,book.worksheets[0].rowCount-7).find(r=>r.getCell(2).value===state.studentName);
+  assert.equal(pupilRow.getCell(7).value,400);assert.equal(pupilRow.getCell(10).value,32);
+  const annualRows=book.worksheets[1].getRows(8,book.worksheets[1].rowCount-7).filter(r=>r.getCell(3).value===pupil.id);
+  assert.deepEqual(annualRows.map(r=>r.getCell(5).value),[120,180,100]);
   const history = data.ains_summaries.filter((r) => r.student_id === pupil.id).length;
   await call('student', { ...pupil, status: 'transferred' });
   await call('student/archive', { id: pupil.id, archived: true });

@@ -8,6 +8,7 @@ import fs from "node:fs";
 import assert from "node:assert/strict";
 import { Miniflare } from "miniflare";
 import { hashPassword, sha, verifyPassword } from "../lib/standalone-auth.mjs";
+import ExcelJS from 'exceljs';
 const setupKey = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');
 const mfOptions = {
   name: "litric-api",
@@ -133,6 +134,17 @@ try {
     ],
   });
   const batchIds = [];
+  const classA=await call('/api/class',{name:'KELAS SINTETIK A',year:2026});
+  const main=await call('/api/student',{name:input(2023,120).rows[0].name,class_id:classA.id,academic_year:2026,status:'current',source_id:'synthetic-permanent-01',source_verified:true});
+  expected(main.message,'Maklumat murid berjaya disimpan.');
+  await call('/api/student',{name:input(2023,120).rows[0].name,class_id:classA.id,academic_year:2026,status:'current'},409);
+  await call('/api/student',{name:'INDIVIDU SINTETIK LAIN',source_id:'synthetic-permanent-01',source_verified:true},409);
+  await call('/api/student',{name:'',status:'current'},400);
+  const withoutAins=await call('/api/student',{name:'MURID SINTETIK TIADA AINS',class_id:classA.id,academic_year:2026,status:'current'});
+  await call('/api/student',{id:main.id,name:'NAMA SINTETIK DIKEMAS KINI',class_id:classA.id,academic_year:2026,status:'current'});
+  expected((await db.prepare('SELECT name FROM students WHERE id=?').bind(main.id).first()).name,'NAMA SINTETIK DIKEMAS KINI');
+  await call('/api/student',{id:main.id,name:input(2023,120).rows[0].name,class_id:classA.id,academic_year:2026,status:'current'});
+  expected((await db.prepare('SELECT COUNT(*) AS n FROM students').first()).n,2);
   for (const [year, total] of [
     [2023, 120],
     [2024, 180],
@@ -173,7 +185,22 @@ try {
   let state = await call("/api/state?year=2025");
   const sourceRows = await call("/api/source?batch=" + state.import_batches[0].id);
   expected(sourceRows.length, 1);
-  expected(state.students.length, 1);
+  expected(state.students.length, 2);
+  expected(state.ains_summaries.every(r=>r.student_id===main.id),true);
+  expected(state.aliases.find(a=>a.source_id==='synthetic-permanent-01').student_id,main.id);
+  async function workbook(query='',bearer=token,status=200){
+    const response=await mf.dispatchFetch('https://litric.example.invalid/api/report?format=xlsx&'+query,{headers:{...(bearer?{Authorization:'Bearer '+bearer}:{})}});
+    expected(response.status,status);if(status!==200)return;
+    expected(response.headers.get('Cache-Control'),'no-store');
+    const result=new ExcelJS.Workbook();await result.xlsx.load(await response.arrayBuffer());return result;
+  }
+  await workbook('', '',401);
+  const book=await workbook('status=current&classId='+classA.id+'&academicYear=2026');
+  expected(book.worksheets.length,3);expected(book.worksheets[0].rowCount,9);
+  const noneRow=book.worksheets[0].getRows(8,2).find(r=>r.getCell(2).value==='MURID SINTETIK TIADA AINS');
+  expected(noneRow.getCell(7).value,'Tiada rekod AINS');expected(noneRow.getCell(8).value,'Belum dapat disahkan');
+  const starBook=await workbook('star=2');expected(starBook.worksheets[0].rowCount,8);
+  expected((await db.prepare("SELECT COUNT(*) AS n FROM audit_logs WHERE action='Muat turun laporan Excel'").first()).n,2);
   expected(state.metrics.eligible, 100);
   expected(state.metrics.lifetime.students[0].eligible, 400);
   expected(state.metrics.lifetime.students[0].achievement.level, 2);
@@ -194,7 +221,10 @@ try {
   await call("/api/student/archive", { id: student.id, archived: false });
   state = await call("/api/state");
   expected(state.students[0].archived_at, null);
-  expected(state.students[0].status, "transferred");
+  expected(state.students[0].status, "current");
+  await call('/api/student',{...student,status:'graduated'});
+  expected((await call('/api/state')).students.find(s=>s.id===student.id).archived_at!==null,true);
+  await call('/api/student/archive',{id:student.id,archived:false});
   const overlap = await call(
     "/api/import/commit",
     input(2024, 10, "Ringkasan lain"),
@@ -218,7 +248,7 @@ try {
   expected(backup.school, "ABA6052");
   expected(backup.tables.ains_summaries.length, historyCount + 1);
   const manifest = validateBackup(backup);
-  expected(manifest.counts.students, 1);
+  expected(manifest.counts.students, 2);
   expected(manifest.rawApprovedByYear[2024], 190);
   assert.throws(() => validateBackup({ ...backup, school: "OTHER" }));
   checks++;
@@ -264,6 +294,12 @@ try {
     fs.rmSync(dir, { recursive: true, force: true });
   }
   const adminToken = token;
+  const missingInput={filename:'SINTETIK-PADANAN.xlsx',dataset:'SINTETIK-PADANAN',sourceType:'XLSX',rows:[{code:'ABA6052',name:'MURID SINTETIK TIADA AINS',approved:12,year:2026}]};
+  expected((await call('/api/import/preview',missingInput)).identityIssues.length,1);
+  await call('/api/import/commit',missingInput,409);
+  const linked=await call('/api/import/commit',{...missingInput,identityLinks:{2:{studentId:withoutAins.id,confirmed:true,reason:'BUKTI PADANAN SINTETIK DARIPADA REKOD SEKOLAH'}}});
+  expected((await db.prepare('SELECT student_id FROM ains_summaries WHERE batch_id=?').bind(linked.batchId).first()).student_id,withoutAins.id);
+  expected((await db.prepare('SELECT COUNT(*) AS n FROM students').first()).n,2);
   await db.batch([
     db
       .prepare(
@@ -288,6 +324,8 @@ try {
     .token;
   expected((await call("/api/state")).students.length, 0);
   await call("/api/student/archive", { id: student.id, archived: true }, 403);
+  await call('/api/student',{name:'CUBA TANPA IZIN'},403);
+  const teacherBook=await workbook();expected(teacherBook.worksheets[0].rowCount,7);
   token = adminToken;
   await call("/api/auth/logout", {});
   await call("/api/state", undefined, 401);

@@ -19,6 +19,7 @@ import {
 } from "../../../lib/server";
 import { certificatePDF, reportPDF, reportXLSX } from "../../../lib/exports";
 import {readLimitedBody} from "../../../lib/request-body.mjs";
+import { nilamWorkbook } from '../../../lib/nilam-workbook';
 export const dynamic = "force-dynamic";
 const json = (data: any, status = 200) =>
   Response.json(data, {
@@ -168,6 +169,14 @@ async function handle(request: Request) {
     }
     if (path === "report") {
       requireRole(u, ["admin", "teacher"]);
+      if(url.searchParams.get('format')==='xlsx'){
+        const data=await loadData(u);
+        const filters=Object.fromEntries(['academicYear','classId','status','star','search'].map(k=>[k,url.searchParams.get(k)||'']));
+        let report;
+        try{report=await nilamWorkbook(data,filters);}catch(error:any){fail(error.message,400);}
+        await audit(u,'Muat turun laporan Excel',null,{filters,students:report.count});
+        return attachment(report.bytes,`LITRIC_LAPORAN_NILAM_${report.date}.xlsx`,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      }
       const data = await loadData(u),
         filters = filtersFrom(url),
         pid = url.searchParams.get("programme");

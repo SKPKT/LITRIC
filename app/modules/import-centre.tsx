@@ -107,7 +107,7 @@ export default function ImportCentre({ data, mutate, busy, notify }: any) {
         }
         for(const [year,rows] of groups){
           const r=await api('import/preview',{rows,granularity});
-          arr.push({...parsed,rows,stats:r.stats,errors:r.errors,previewRows:r.rows,
+          arr.push({...parsed,rows,stats:r.stats,errors:r.errors,previewRows:r.rows,identityIssues:r.identityIssues||[],identityLinks:{},
             filename:file.name+(year==='unknown'?'':' ['+year+']'),
             fileHash:originalHash+':'+year,sourceType:/csv$/i.test(file.name)?'CSV':'XLSX'});
         }
@@ -128,6 +128,7 @@ export default function ImportCentre({ data, mutate, busy, notify }: any) {
     try {
       if (previews.some((p) => p.nameMatched) && !nameConfirm)
         throw new Error("Sahkan padanan sekolah melalui nama sebelum import.");
+      if(previews.some(p=>p.identityIssues.some((r:any)=>!p.identityLinks[String(r.rowNumber)]?.studentId||!p.identityLinks[String(r.rowNumber)]?.confirmed||String(p.identityLinks[String(r.rowNumber)]?.reason||'').trim().length<10)))throw new Error('Lengkapkan pilihan identiti, bukti dan pengesahan untuk semua baris yang memerlukan semakan.');
       for (let i = 0; i < previews.length; i++) {
         const p = previews[i];
         saved.push(
@@ -139,6 +140,7 @@ export default function ImportCentre({ data, mutate, busy, notify }: any) {
             fileHash: p.fileHash,
             monthHint: null,
             granularity,
+            identityLinks:p.identityLinks,
           }),
         );
         setProgress(Math.round(((i + 1) / previews.length) * 100));
@@ -440,6 +442,13 @@ export default function ImportCentre({ data, mutate, busy, notify }: any) {
                   {p.filename}
                   <Pill tone="neutral">{p.rows.length} baris</Pill>
                 </h3>
+                {p.identityIssues.map((issue:any)=><div className="identity-resolution" key={issue.rowNumber}>
+                  <b>Semakan identiti · Baris {issue.rowNumber} · {issue.name}</b>
+                  <p>{issue.message} Pengecam: {issue.sourceId||'Tiada'}. Nama sahaja tidak dipadankan secara automatik.</p>
+                  <label>Profil murid untuk baris {issue.rowNumber}<select value={p.identityLinks[String(issue.rowNumber)]?.studentId||''} onChange={e=>setPreviews(old=>old.map(x=>x===p?{...x,identityLinks:{...x.identityLinks,[String(issue.rowNumber)]:{...x.identityLinks[String(issue.rowNumber)],studentId:e.target.value}}}:x))}><option value="">Pilih profil dengan bukti</option><option value="new">Daftar profil baharu — individu berlainan</option>{data.students.map((s:any)=><option key={s.id} value={s.id}>{s.name} · {s.id.slice(0,8)}</option>)}</select></label>
+                  <label>Bukti padanan baris {issue.rowNumber}<input value={p.identityLinks[String(issue.rowNumber)]?.reason||''} minLength={10} maxLength={1000} placeholder="Nyatakan bukti rekod sekolah…" onChange={e=>setPreviews(old=>old.map(x=>x===p?{...x,identityLinks:{...x.identityLinks,[String(issue.rowNumber)]:{...x.identityLinks[String(issue.rowNumber)],reason:e.target.value}}}:x))}/></label>
+                  <label className="checkbox"><input type="checkbox" checked={!!p.identityLinks[String(issue.rowNumber)]?.confirmed} onChange={e=>setPreviews(old=>old.map(x=>x===p?{...x,identityLinks:{...x.identityLinks,[String(issue.rowNumber)]:{...x.identityLinks[String(issue.rowNumber)],confirmed:e.target.checked}}}:x))}/>Saya mengesahkan identiti berdasarkan bukti sekolah.</label>
+                </div>)}
                 <div className="table-scroll">
                   <table>
                     <thead>

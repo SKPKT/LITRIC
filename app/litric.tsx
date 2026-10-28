@@ -351,7 +351,7 @@ export default function Litric() {
       notify(
         r.duplicate
           ? "Fail ini telah diimport. Jumlah tidak ditambah."
-          : "Perubahan disimpan.",
+          : r.message || "Perubahan disimpan.",
       );
       await refresh();
       return r;
@@ -607,14 +607,14 @@ export default function Litric() {
                   timeZone: "Asia/Kuala_Lumpur",
                 })}
               </span>
-              {!isStudent && (
+              {!isStudent && !['murid','bintang'].includes(route) && (
                 <button className="btn" onClick={() => downloadProtected("/api/report?format=xlsx&"+query(filters)).catch(e=>notify(e.message))}>
                   <Download size={16} /> Eksport Laporan
                 </button>
               )}
             </div>
           </div>
-          {["dashboard", "analitik", "bintang", "laporan"].includes(route) && (
+          {["dashboard", "analitik", "laporan"].includes(route) && (
             <>
               <div className="filters">
                 <label>

@@ -47,6 +47,7 @@ import {
   api,
 } from "../litric";
 import { aggregate, MONTHS, coversRange } from "../../lib/domain.mjs";
+import { StudentReportControls, useStudentReport } from './student-report-controls';
 const today = () =>
   new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kuala_Lumpur" });
 const monthStart = () => today().slice(0, 7) + "-01";
@@ -128,7 +129,7 @@ function Form({
                     ))}
                   </select>
                 ) : f.type === "checkbox" ? (
-                  <label className="checkbox">
+                  <span className="checkbox">
                     <input
                       type="checkbox"
                       checked={!!v[f.key]}
@@ -137,7 +138,7 @@ function Form({
                       }
                     />
                     {f.text || "Ya, disahkan"}
-                  </label>
+                  </span>
                 ) : f.type === "textarea" ? (
                   <textarea
                     required={f.required}
@@ -207,15 +208,13 @@ const classOptions = (data: any) =>
 function Students(ctx: any) {
   const { data, mutate, go } = ctx,
     [form, setForm] = useState<any>(null),
-    [find, setFind] = useState(""),
     [page, setPage] = useState(0),
     [merge, setMerge] = useState(false),
-    [enrolment,setEnrolment]=useState("all"),
     [classForm,setClassForm]=useState(false);
   const admin = data.user.role === "admin";
-  const list = data.students.filter(
-    (s: any) => (enrolment === "all" || (enrolment === "archived" ? !!s.archived_at : !s.archived_at && (enrolment === "current" ? s.status === "current" : s.status === "transferred" || s.status === "former"))) && (!find || s.name.toLowerCase().includes(find.toLowerCase())),
-  );
+  const {filters,setFilters,report}=useStudentReport(data);
+  const list = report.records;
+  const editStudent=(s:any)=>{const alias=data.aliases?.find((a:any)=>a.student_id===s.id&&a.verified&&!a.source_id.startsWith('missing:'));setForm({...s,source_id:alias?.source_id||'',source_verified:!!alias});};
   const fields = [
     { key: "name", label: "Nama penuh", required: true },
     {
@@ -237,12 +236,17 @@ function Students(ctx: any) {
       type: "select",
       options: [
         { value: "unconfirmed", label: "Belum disahkan" },
-        { value: "current", label: "Murid semasa" },
-        { value: "former", label: "Bekas murid" },
+        { value: "current", label: "Aktif" },
+        { value: "graduated", label: "Tamat Sekolah" },
+        { value: "former", label: "Tamat Sekolah (rekod lama)" },
         { value: "transferred", label: "Berpindah" },
       ],
     },
     { key: "member_id", label: "ID ahli SMARTLIB" },
+    { key: 'source_id', label: 'ID murid sumber AINS', hint: 'Pilihan. Gunakan pengecam sebenar yang telah disemak; nama sahaja tidak digunakan untuk padanan automatik.' },
+    { key: 'source_verified',label:'Pengesahan pengecam AINS',type:'checkbox',text:'Saya telah mengesahkan ID sumber ini berdasarkan rekod sekolah.',show:(v:any)=>!!v.source_id },
+    { key: 'duplicate_confirmed',label:'Individu berlainan dengan nama sama',type:'checkbox',text:'Saya mengesahkan ini individu berbeza, bukan profil pendua.' },
+    { key: 'duplicate_reason',label:'Bukti individu berbeza',type:'textarea',required:true,show:(v:any)=>!!v.duplicate_confirmed },
   ];
   return (
     <>
@@ -258,29 +262,16 @@ function Students(ctx: any) {
               </button>
               <button
                 className="btn primary"
-                onClick={() => setForm({ status: "unconfirmed" })}
+                onClick={() => setForm({ status: "current", academic_year:new Date().getFullYear() })}
               >
-                <Plus size={16} /> Tambah murid
+                <Plus size={18} /> Tambah Murid
               </button>
             </div>
           )
         }
       >
-        <div className="table-toolbar">
-          <div className="input-icon">
-            <Search size={16} />
-            <input
-              aria-label="Cari dalam direktori"
-              placeholder="Cari nama murid…"
-              value={find}
-              onChange={(e) => {
-                setFind(e.target.value);
-                setPage(0);
-              }}
-            />
-          </div>
-          <select aria-label="Status direktori" value={enrolment} onChange={e=>{setEnrolment(e.target.value);setPage(0);}}><option value="current">Murid semasa</option><option value="former">Berpindah / bekas murid</option><option value="archived">Arkib</option><option value="all">Semua rekod</option></select><Pill tone="neutral">{list.length} murid</Pill>
-        </div>
+        <StudentReportControls data={data} filters={filters} setFilters={(v:any)=>{setFilters(v);setPage(0);}} notify={ctx.notify}/>
+        <p className="pad">{list.length} murid · Murid berpindah atau tamat sekolah diarkibkan dengan sejarah kekal.</p>
         <div className="table-scroll">
           <table>
             <thead>
@@ -289,6 +280,8 @@ function Students(ctx: any) {
                 <th>Kelas</th>
                 <th>Tahun</th>
                 <th>Enrolmen</th>
+                <th>Jumlah bacaan terkumpul</th>
+                <th>Pencapaian Bintang</th>
                 <th>Profil</th>
               </tr>
             </thead>
@@ -315,16 +308,11 @@ function Students(ctx: any) {
                     <td>{s.academic_year || "Belum disahkan"}</td>
                     <td>
                       <Pill tone={s.status === "current" ? "green" : "neutral"}>
-                        {(
-                          {
-                            current: "Semasa",
-                            former: "Bekas murid",
-                            transferred: "Berpindah",
-                            unconfirmed: "Belum disahkan",
-                          } as Record<string, string>
-                        )[s.status] || s.status}
+                        {s.statusLabel}
                       </Pill>
                     </td>
+                    <td>{s.total==null?(s.hasAins?'Belum disahkan':'Tiada rekod AINS'):fmt(s.total)}</td>
+                    <td>{s.achievement.level==null?'Belum dapat disahkan':`${s.achievement.level} Bintang`}</td>
                     <td>
                       <div className="button-row">
                         <button
@@ -336,7 +324,7 @@ function Students(ctx: any) {
                         {admin && (
                           <button
                             className="text-btn"
-                            onClick={() => setForm(s)}
+                            onClick={() => editStudent(s)}
                           >
                             Edit
                           </button>
@@ -378,7 +366,7 @@ function Students(ctx: any) {
           fields={fields}
           initial={form}
           onClose={() => setForm(null)}
-          onSubmit={(v: any) => mutate("student", v)}
+          onSubmit={async(v: any) => {await mutate("student", v);if(!form.id){setFilters({status:'all',academicYear:'',classId:'',star:'all',search:v.name});setPage(0);}}}
         />
       )}{" "}
       {classForm&&<Form title="Tambah kelas" fields={[{key:"name",label:"Nama kelas",required:true},{key:"year",label:"Tahun akademik",type:"number",min:2000,max:2100,required:true}]} initial={{year:new Date().getFullYear()}} onClose={()=>setClassForm(false)} onSubmit={(v:any)=>mutate("class",v)}/>}
