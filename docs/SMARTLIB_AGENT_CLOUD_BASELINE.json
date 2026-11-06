@@ -1,0 +1,45 @@
+{
+  "observed_at": "2026-11-06T14:45:25.834492+00:00",
+  "production_url": "https://litric-pilot.g-18197853.workers.dev",
+  "checks": {
+    "/": {
+      "http_status": 200,
+      "title": [
+        "LITRIC \u2022 Every Read Counts. Every Progress Matters."
+      ]
+    },
+    "/health": {
+      "http_status": 200,
+      "health": {
+        "ok": true,
+        "loginEnabled": true
+      }
+    },
+    "/api/state": {
+      "http_status": 401
+    },
+    "/api/smartlib/status": {
+      "http_status": 404
+    },
+    "/api/smartlib/agent": {
+      "http_status": 404
+    }
+  },
+  "cloudflare_authenticated": false,
+  "live_configuration_reconciled": false,
+  "live_d1_database_id": null,
+  "deployed_worker_version": null,
+  "public_frontend_asset": {
+    "path": "/assets/index-DKWtzYjQ.js",
+    "sha256": "0f89516fa5cf3256b54ce369d498ae0a53d73f32de984ab3848dc6d5d5530577",
+    "contains_agent_route": false,
+    "contains_robot_styles": false
+  },
+  "candidate_frontend_asset": {
+    "path": "/assets/index-Dh54Rgy8.js",
+    "sha256": "a1d59aecf52004968957615e1484fc3250db94588680c0153dd3d4ec81b6a502",
+    "contains_agent_route": true,
+    "contains_robot_styles": true
+  },
+  "candidate_differs_from_production": true
+}

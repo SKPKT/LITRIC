@@ -6,7 +6,7 @@ if (
   id === "00000000-0000-4000-8000-000000000000"
 )
   throw new Error(
-    "Set CLOUDFLARE_D1_ID to the NEW school-controlled D1 database ID.",
+    "Set CLOUDFLARE_D1_ID to the verified existing school-controlled D1 database ID.",
   );
 const config = JSON.parse(fs.readFileSync("standalone/wrangler.jsonc", "utf8"));
 config.d1_databases[0].database_id = id;

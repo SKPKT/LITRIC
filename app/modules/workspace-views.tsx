@@ -48,6 +48,7 @@ import {
 } from "../litric";
 import { aggregate, MONTHS, coversRange } from "../../lib/domain.mjs";
 import { StudentReportControls, useStudentReport } from './student-report-controls';
+import { SmartlibConnection } from './smartlib-connection';
 const today = () =>
   new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kuala_Lumpur" });
 const monthStart = () => today().slice(0, 7) + "-01";
@@ -1134,6 +1135,7 @@ function Smartlib({ data, notify, mutate }: any) {
   async function search(value = q) {
     setBusy(true);
     setError("");
+    setBooks([]);
     try {
       const r = await api("smartlib?q=" + encodeURIComponent(value));
       setBooks(r.books);
@@ -1145,20 +1147,15 @@ function Smartlib({ data, notify, mutate }: any) {
   }
   return (
     <>
+      <SmartlibConnection />
       <Panel
         title="Katalog SMARTLIB"
         sub="Cari ISBN, imbas QR atau masukkan pengecam buku"
         action={
           <Pill
-            tone={
-              data.settings.smartlibUrl || data.settings.smartlibConfigured
-                ? "green"
-                : "neutral"
-            }
+            tone="neutral"
           >
-            {data.settings.smartlibUrl || data.settings.smartlibConfigured
-              ? "Adapter dikonfigurasi"
-              : "Belum disambungkan"}
+            Belum disahkan
           </Pill>
         }
       >
@@ -1244,33 +1241,8 @@ function Smartlib({ data, notify, mutate }: any) {
           </div>
         )}
       </Panel>
-      <Panel
-        title="Cadangan pilihan guru"
-        sub="Bahasa dan kategori dipilih daripada katalog tersedia"
-      >
-        <div className="list-records">
-          {data.smartlib_book_links
-            .filter((b: any) => b.suitable)
-            .map((b: any) => (
-              <div key={b.id}>
-                <BookOpen size={22} />
-                <div>
-                  <b>{b.title}</b>
-                  <p>
-                    {b.language || "Bahasa belum dipetakan"} ·{" "}
-                    {b.category || "Kategori belum dipetakan"}
-                  </p>
-                </div>
-                <Pill>Dipilih guru</Pill>
-              </div>
-            ))}
-        </div>
-        {!data.smartlib_book_links.some((b: any) => b.suitable) && (
-          <p className="muted pad">
-            Belum ada bahan dipilih guru. Minat dan kesesuaian ditentukan guru
-            tanpa inferens daripada diagnosis murid.
-          </p>
-        )}
+      <Panel title="Cadangan pilihan guru" sub="Memerlukan rekod katalog SMARTLIB yang disahkan">
+        <p className="muted pad">Cadangan ditangguhkan sehingga ID dan judul dapat disahkan melalui katalog produksi. Pautan lama tidak membuktikan kewujudan atau ketersediaan semasa.</p>
       </Panel>
       {camera && (
         <CameraScanner

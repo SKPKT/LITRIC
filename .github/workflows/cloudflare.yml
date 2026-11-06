@@ -1,7 +1,7 @@
 name: Validate and deploy LITRIC to Cloudflare
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/litric-v2-standalone]
   push:
     branches: [main]
   workflow_dispatch:
@@ -28,6 +28,16 @@ jobs:
       - run: node scripts/check-pages.mjs --worker
       - run: npm run build:api
       - run: npm run test:api
+      - name: Verify SMARTLIB Agent browser behavior and accessibility
+        run: npm run test:agent:browser
+        env:
+          LITRIC_QA_ARTIFACTS: ${{ runner.temp }}/litric-agent-browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: litric-agent-browser-validation
+          path: ${{ runner.temp }}/litric-agent-browser/
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: litric-worker-validation
