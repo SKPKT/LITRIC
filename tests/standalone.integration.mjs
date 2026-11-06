@@ -95,6 +95,11 @@ try {
       "oai-authenticated-user-email": "admin@example.invalid",
     },
   });
+  await call("/api/smartlib/status", undefined, 401);
+  await call("/api/smartlib/agent", {question:'Analisis AINS'}, 401);
+  await call("/api/smartlib/agent", undefined, 404);
+  await call("/api/smartlib?q=catalogue", undefined, 401);
+  await call("/api/smartlib", { action: "write" }, 404);
   await call(
     "/api/auth/login",
     { username: "GPM", password: crypto.randomUUID() },
@@ -109,6 +114,25 @@ try {
   await call("/api/state", undefined, 401);
   token = (await call("/api/auth/login", { username: "GPM", password })).token;
   expected((await call("/api/state")).students.length, 0);
+  const smartlibStatus = await call("/api/smartlib/status");
+  expected(smartlibStatus.status, "not_configured");
+  expected(smartlibStatus.connected, false);
+  expected(smartlibStatus.verified, false);
+  expected(smartlibStatus.catalogueRecordsRead, null);
+  expected(smartlibStatus.lastSuccessfulConnectionAt, null);
+  expected(smartlibStatus.lastCatalogueSyncAt, null);
+  const blockedCatalogue = await call("/api/smartlib?q=catalogue", undefined, 409);
+  expected(blockedCatalogue.books, []);
+  expected(blockedCatalogue.connected, false);
+  expected(blockedCatalogue.error, "SMARTLIB Integration: NOT VERIFIED");
+  const emptyAgent=await call('/api/smartlib/agent',{question:'Analisis AINS'});
+  expected(emptyAgent.analysis.studentCount,0);
+  expected(emptyAgent.analysis.latestAinsReportingDate,null);
+  expected(emptyAgent.connection.verifiedAt,null);
+  expected(emptyAgent.languageModelConfigured,false);
+  await call('/api/smartlib/agent',{question:'x'.repeat(2001)},400);
+  await call('/api/smartlib/agent',{question:'x'.repeat(9000)},413);
+  await call('/api/smartlib/agent',{question:'Analisis AINS'},403,{origin:'https://evil.invalid'});
   await call("/api/state", undefined, 403, { origin: "https://evil.invalid" });
   const input = (year, approved, dataset = "Sintetik") => ({
     filename: `ujian-${year}-${approved}.xlsx`,
@@ -188,6 +212,20 @@ try {
   expected(state.students.length, 2);
   expected(state.ains_summaries.every(r=>r.student_id===main.id),true);
   expected(state.aliases.find(a=>a.source_id==='synthetic-permanent-01').student_id,main.id);
+  const dbSnapshot = async () => sha(JSON.stringify(await Promise.all([
+    ['students','id'],['ains_summaries','id'],['import_batches','id'],['auth_accounts','user_id'],['smartlib_book_links','id'],
+  ].map(async([table,key])=>(await db.prepare(`SELECT * FROM ${table} ORDER BY ${key}`).all()).results))));
+  const beforeAgent=await dbSnapshot();
+  const agent=await call('/api/smartlib/agent',{question:'Pelan galakan membaca dan buku tersedia',start:'2025-01-01',end:'2025-12-31',connection:{connected:true}});
+  expected(agent.analysis.studentCount,2);
+  expected(agent.analysis.counts.no_entry_in_available_sources,1);
+  expected(agent.analysis.counts.recorded_entry,1);
+  expected(agent.analysis.latestAinsReportingDate,'2025-12-31');
+  expected(agent.connection.connected,false);
+  expected(agent.catalogueRecommendations,[]);
+  expected(agent.overdueLoans,null);
+  expected(agent.focusStudentIds,[withoutAins.id]);
+  expected(await dbSnapshot(),beforeAgent);
   async function workbook(query='',bearer=token,status=200){
     const response=await mf.dispatchFetch('https://litric.example.invalid/api/report?format=xlsx&'+query,{headers:{...(bearer?{Authorization:'Bearer '+bearer}:{})}});
     expected(response.status,status);if(status!==200)return;
@@ -322,6 +360,11 @@ try {
   ]);
   token = (await call("/api/auth/login", { username: "TEACHER", password }))
     .token;
+  const teacherAgent=await call('/api/smartlib/agent',{question:'Murid tanpa entri AINS',start:'2025-01-01',end:'2025-12-31'});
+  expected(teacherAgent.analysis.records,[]);
+  expected(teacherAgent.analysis.sources,[]);
+  expected((await call("/api/smartlib/status")).connected, false);
+  await call("/api/smartlib/status", { status: "connected" }, 404);
   expected((await call("/api/state")).students.length, 0);
   await call("/api/student/archive", { id: student.id, archived: true }, 403);
   await call('/api/student',{name:'CUBA TANPA IZIN'},403);

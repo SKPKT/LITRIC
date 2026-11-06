@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { Panel, Badge, fmt, pretty, Modal } from "../litric";
 import { StudentReportControls, useStudentReport } from './student-report-controls';
+import { SmartlibConnection } from './smartlib-connection';
+import { SmartlibAgent } from './smartlib-agent';
 function Stat({ label, value, icon: Icon, sub }: any) {
   return (
     <article className="kpi">
@@ -50,6 +52,17 @@ function Bars({ items, label }: any) {
   );
 }
 export function IndependentDashboard({ ctx }: any) {
+  const [tab,setTab] = useState('analytics');
+  return <>
+    <div className="agent-tabs" role="tablist" aria-label="Ruang dashboard">
+      <button id="analytics-tab" role="tab" aria-selected={tab==='analytics'} aria-controls="analytics-panel" tabIndex={tab==='analytics'?0:-1} onKeyDown={e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();setTab('agent');document.getElementById('smartlib-agent-tab')?.focus();}}} onClick={()=>setTab('analytics')}>Dashboard Analitik</button>
+      <button id="smartlib-agent-tab" role="tab" aria-selected={tab==='agent'} aria-controls="smartlib-agent-panel" tabIndex={tab==='agent'?0:-1} onKeyDown={e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();setTab('analytics');document.getElementById('analytics-tab')?.focus();}}} onClick={()=>setTab('agent')}><BookOpen size={16}/> SMARTLIB Agent <span>BAHASA BUKTI</span></button>
+    </div>
+    <div id="analytics-panel" role="tabpanel" aria-labelledby="analytics-tab" hidden={tab!=='analytics'}>{tab==='analytics' && <DashboardAnalytics ctx={ctx}/>}</div>
+    <div id="smartlib-agent-panel" role="tabpanel" aria-labelledby="smartlib-agent-tab" hidden={tab!=='agent'}>{tab==='agent' && <SmartlibAgent data={ctx.data}/>}</div>
+  </>;
+}
+function DashboardAnalytics({ ctx }: any) {
   const { data, go } = ctx,
     m = data.metrics,
     l = m.lifetime,
@@ -79,6 +92,7 @@ export function IndependentDashboard({ ctx }: any) {
         </div>
         <BookOpen size={100} aria-hidden="true" />
       </section>
+      {["admin", "teacher"].includes(data.user.role) && <SmartlibConnection />}
       <div className="kpis dashboard-kpis">
         <Stat
           label="Jumlah Murid Semasa"

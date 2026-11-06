@@ -2,8 +2,10 @@ import { DurableObject, env } from "cloudflare:workers";
 import { GET as api } from "../app/api/[...path]/route";
 import { authEndpoint } from "../lib/standalone-auth.mjs";
 import { bootstrapEndpoint } from "../lib/standalone-bootstrap.mjs";
-const readPaths = new Set(["state", "report", "backup", "errors", "source"]);
+const readPaths = new Set(["state", "report", "backup", "errors", "source", "smartlib", "smartlib/status"]);
 const writePaths = new Set([
+  // POST carries private questions in the body; this handler is read-only.
+  "smartlib/agent",
   "import/commit",
   "import/preview",
   "batch/verify",

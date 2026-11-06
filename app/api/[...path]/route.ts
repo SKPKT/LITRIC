@@ -20,6 +20,8 @@ import {
 import { certificatePDF, reportPDF, reportXLSX } from "../../../lib/exports";
 import {readLimitedBody} from "../../../lib/request-body.mjs";
 import { nilamWorkbook } from '../../../lib/nilam-workbook';
+import { unverifiedSmartlibStatus } from '../../../lib/smartlib-status.mjs';
+import { analyseAins, answerAinsQuestion } from '../../../lib/smartlib-agent.mjs';
 export const dynamic = "force-dynamic";
 const json = (data: any, status = 200) =>
   Response.json(data, {
@@ -46,6 +48,22 @@ async function handle(request: Request) {
     if (origin && origin !== ((env as any).LITRIC_AUTH_MODE === "standalone" ? ((env as any).FRONTEND_ORIGIN || url.origin) : url.origin))
       fail("Asal permintaan tidak dibenarkan.", 403);
     const u = await auth(request);
+    if (path === 'smartlib/agent') {
+      requireRole(u, ['admin', 'teacher']);
+      if (request.method !== 'POST') fail('Gunakan POST untuk soalan peribadi.', 405);
+      if (!request.headers.get('content-type')?.toLowerCase().startsWith('application/json')) fail('Jenis kandungan JSON diperlukan.',415);
+      const bytes = await readLimitedBody(request, 8192);
+      let input: any;
+      try { input = JSON.parse(new TextDecoder().decode(bytes)); } catch { fail('Kandungan JSON tidak sah.'); }
+      if (!input || typeof input !== 'object' || Array.isArray(input)) fail('Objek JSON diperlukan.');
+      const data = await loadData(u);
+      const clock = new Date();
+      const analysis = analyseAins(data, {start:input.start,end:input.end,classId:input.classId},clock);
+      const connection = unverifiedSmartlibStatus(data.settings,env);
+      // Questions and pupil data stay in this authenticated request. No model
+      // egress, conversation storage, SMARTLIB network request or data mutation.
+      return json(answerAinsQuestion(analysis,input.question,connection,clock));
+    }
     if (request.method !== "GET") {
       if (path === "file") {
         requireRole(u, ["admin", "teacher"]);
@@ -351,7 +369,7 @@ async function handle(request: Request) {
         "application/json",
       );
     }
-    if (path === "smartlib") {
+    if (path === "smartlib" || path === "smartlib/status") {
       requireRole(u, ["admin", "teacher"]);
       const settings = JSON.parse(
         (
@@ -361,57 +379,11 @@ async function handle(request: Request) {
           )
         )?.data || "{}",
       );
-      if (!settings.smartlibUrl)
-        fail(
-          "SMARTLIB belum disambungkan. Tetapkan URL adapter HTTPS dalam Tetapan Sistem.",
-          409,
-        );
-      const target = new URL(settings.smartlibUrl);
-      target.searchParams.set(
-        "q",
-        (url.searchParams.get("q") || "").slice(0, 150),
-      );
-      target.searchParams.set("school", u.school_id);
-      const res = await fetch(target, {
-        headers: {
-          Accept: "application/json",
-          ...((env as any).SMARTLIB_API_KEY
-            ? { Authorization: `Bearer ${(env as any).SMARTLIB_API_KEY}` }
-            : {}),
-        },
-        redirect: "error",
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!res.ok) fail(`SMARTLIB memberikan status ${res.status}.`, 502);
-      if (Number(res.headers.get("content-length") || 0) > 1024 * 1024)
-        fail("Respons SMARTLIB terlalu besar.", 502);
-      const body = await res.text();
-      if (body.length > 1024 * 1024)
-        fail("Respons SMARTLIB terlalu besar.", 502);
-      const raw = JSON.parse(body),
-        items = Array.isArray(raw) ? raw : raw.books;
-      if (!Array.isArray(items))
-        fail("Adapter mesti memulangkan senarai books.", 502);
-      const books = items
-        .slice(0, 50)
-        .filter((b: any) => typeof b.title === "string")
-        .map((b: any) => ({
-          id: String(b.id || b.isbn || uid()).slice(0, 150),
-          title: String(b.title).slice(0, 300),
-          author: String(b.author || "").slice(0, 300),
-          isbn: String(b.isbn || "").slice(0, 100),
-          category: String(b.category || "").slice(0, 100),
-          language: String(b.language || "").slice(0, 20),
-          availability: String(b.availability || "").slice(0, 100),
-          cover:
-            typeof b.cover === "string" && b.cover.startsWith("https://")
-              ? b.cover
-              : null,
-        }));
-      await audit(u, "Carian katalog SMARTLIB", null, {
-        results: books.length,
-      });
-      return json({ books, connected: true, ainsApproved: false });
+      const connection = unverifiedSmartlibStatus(settings, env);
+      if (path === "smartlib/status") return json(connection);
+      // Do not send credentials to a configurable URL or guess a production
+      // API contract. Resume only after real authenticated reads are verified.
+      return json({ error: connection.message, books: [], connected: false, connection }, 409);
     }
     fail("Laluan tidak ditemui.", 404);
   } catch (e: any) {

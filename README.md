@@ -8,6 +8,8 @@ V2 menjalankan React dan API pada **Cloudflare Worker yang sama**, dengan Cloudf
 
 **Status (28 Oktober 2026):** rintis berfungsi di [litric-pilot.g-18197853.workers.dev](https://litric-pilot.g-18197853.workers.dev). Pendaftaran murid manual, pencegahan pendua, pautan pengecam AINS, arkib/pulih dan eksport Excel tiga helaian sudah ditambah serta diuji pada URL live. GPM telah disediakan oleh pemilik; akaun pentadbir tidak diubah dalam kemas kini ini. Worker/D1 yang sama digunakan tanpa migrasi skema. Sandaran D1 disahkan dan semua rekod asal serta statistik dibandingkan selepas deployment. Lihat [STUDENT_EXPORT_VALIDATION.md](STUDENT_EXPORT_VALIDATION.md) untuk keputusan semakan dan senarai fail. Backend Sites lama kekal tidak disentuh; migrasi rekod lama tidak dilakukan secara automatik.
 
+**SMARTLIB Agent (6 November 2026, calon PR):** tab dashboard dengan robot animasi, perbualan berasaskan AINS disahkan dan draf semakan guru tersedia dalam sumber calon. Katalog/pinjaman kekal **SMARTLIB Integration: NOT VERIFIED**. Belum dideploy; konfigurasi dan binding Cloudflare produksi mesti dipadankan dahulu. Lihat [pemulihan Cloud dan pelan deployment](docs/SMARTLIB_AGENT_CLOUD.md).
+
 Empat modul utama sahaja:
 
 1. Dashboard Analitik — laporan tahunan, jumlah terkumpul disahkan, taburan bintang, kelas dan pencapaian tertinggi.
