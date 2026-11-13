@@ -1479,6 +1479,33 @@ tbody tr:hover {
 .modal.wide {
   width: 850px;
 }
+.bulk-import-body {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.bulk-import-body .table-scroll { max-width: 100%; }
+.bulk-preview-table { min-width: 690px; }
+.bulk-preview-table td { vertical-align: top; }
+.bulk-preview-table select, .bulk-preview-table input:not([type=checkbox]) {
+  width: 100%;
+  min-width: 145px;
+  margin-bottom: 6px;
+}
+.bulk-import-fields { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; }
+.bulk-import-fields label, .bulk-year { display: grid; gap: 6px; min-width: 0; }
+.bulk-import-fields input, .bulk-import-body textarea { max-width: 100%; }
+.bulk-import-body textarea { display: block; width: 100%; }
+.bulk-check { display: flex; align-items: start; gap: 8px; }
+.bulk-check input[type=checkbox] { width: auto; flex: 0 0 auto; margin-top: .28em; }
+.bulk-summary { display: grid; grid-template-columns: repeat(auto-fit,minmax(132px,1fr)); gap: 8px; }
+.bulk-summary > div { display: grid; padding: 9px 12px; border: 1px solid var(--line); border-radius: 9px; }
+.bulk-summary b { font-size: 1.15rem; }
+.bulk-summary span { font-size: .84rem; }
+.import-filename { overflow-wrap: anywhere; max-width: 28ch; }
+.modal .import-filename { max-width: 100%; }
+.btn.import-delete { background: #fff1f2; color: #9f1239; border-color: #fecdd3; }
+.btn.import-delete:hover { background: #ffe4e6; color: #881337; }
 .modal-head {
   display: flex;
   align-items: center;

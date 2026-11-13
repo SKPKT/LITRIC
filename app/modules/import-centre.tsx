@@ -12,12 +12,20 @@ import {
   Info,
   CloudUpload,
   X,
+  Plus,
 } from "lucide-react";
 import { Panel, Field, Pill, Empty, fmt, api } from "../litric";
+import BulkImport from './bulk-import';
+import { DeleteImportButton, VerifyNilamButton } from './import-actions';
+import { downloadProtected } from '../../lib/client-api';
+import { NILAM_DATASET, ROSTER_DATASET } from '../../lib/nilam-annual.mjs';
 
 import {aliases,autoMap,parse,sha,expandSources} from "../../lib/ains-parser";
-export default function ImportCentre({ data, mutate, busy, notify }: any) {
+export default function ImportCentre({ data, mutate, busy, notify, refresh }: any) {
   const input = useRef<HTMLInputElement>(null);
+  const [bulk,setBulk]=useState(false), [historyPage,setHistoryPage]=useState(0);
+  const history=[...data.import_batches].sort((a:any,b:any)=>b.created_at.localeCompare(a.created_at));
+  const page=Math.min(historyPage,Math.max(0,Math.ceil(history.length/10)-1));
   const [files, setFiles] = useState<File[]>([]),
     [mapping, setMapping] = useState<any>({}),
     [headers, setHeaders] = useState<string[]>([]),
@@ -198,6 +206,7 @@ export default function ImportCentre({ data, mutate, busy, notify }: any) {
           <Panel
             title="Pusat Import AINS"
             sub="CSV, Excel XLSX atau ZIP · pelbagai fail disokong"
+            action={<button className="btn primary" onClick={()=>setBulk(true)}><Plus size={17}/> Import Laporan Bacaan NILAM</button>}
           >
             <div
               className={"dropzone " + (drag ? "drag" : "")}
@@ -548,7 +557,7 @@ export default function ImportCentre({ data, mutate, busy, notify }: any) {
         title="Import terkini"
         sub="Sumber, pengesahan dan keputusan import"
       >
-        <div className="table-scroll">
+        {history.length===0?<Empty title="Tiada import lagi">Fail yang berjaya disimpan akan dipaparkan di sini.</Empty>:<div className="table-scroll">
           <table>
             <thead>
               <tr>
@@ -557,41 +566,48 @@ export default function ImportCentre({ data, mutate, busy, notify }: any) {
                 <th>Pelaporan</th>
                 <th>Status</th>
                 <th>Ralat</th>
+                <th>Tindakan</th>
               </tr>
             </thead>
             <tbody>
-              {data.import_batches.map((b: any) => (
+              {history.slice(page*10,(page+1)*10).map((b: any) => (
                 <tr key={b.id}>
-                  <td>
+                  <td className="import-filename">
                     <FileSpreadsheet size={16} />
                     {b.filename}
                   </td>
                   <td>{b.dataset}</td>
                   <td>
-                    {b.period_start
+                    {b.dataset===NILAM_DATASET ? b.year : b.period_start
                       ? `${b.period_start} – ${b.period_end}`
                       : "Tempoh belum disahkan"}
                   </td>
                   <td>
-                    <Pill tone={b.status === "active" ? "green" : "neutral"}>
-                      {b.status === "active" ? "Aktif" : "Dibatalkan"}
+                    <Pill tone={b.status !== "active" ? "neutral" : b.dataset===NILAM_DATASET&&b.verification!=='verified' ? 'amber' : 'green'}>
+                      {b.status !== "active" ? "Dibatalkan" : b.dataset===NILAM_DATASET ? (b.verification==='verified'?'Disahkan':'Dilaporkan') : 'Aktif'}
                     </Pill>
                   </td>
                   <td>
-                    <a
-                      className="icon-btn"
-                      title="Muat turun laporan ralat"
-                      href={"/api/errors?batch=" + b.id}
-                    >
-                      <Download size={17} />
-                    </a>
+                    <button className="icon-btn" aria-label="Muat turun keputusan atau ralat" onClick={()=>downloadProtected(
+                      ([NILAM_DATASET,ROSTER_DATASET].includes(b.dataset)?'/api/bulk/result?batch=':'/api/errors?batch=')+b.id
+                    ).catch(e=>notify(e.message))}><Download size={17}/></button>
                   </td>
+                  <td><div className="button-row">
+                    {b.dataset===NILAM_DATASET&&b.status==='active'&&b.verification!=='verified'&&<VerifyNilamButton batch={b} mutate={mutate}/>}
+                    <DeleteImportButton batch={b} mutate={mutate} notify={notify}/>
+                  </div></td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
+        </div>}
+        {history.length>10&&<div className="button-row pad">
+          <button className="btn" disabled={page===0} onClick={()=>setHistoryPage(page-1)}>Sebelumnya</button>
+          <span>Halaman {page+1} / {Math.ceil(history.length/10)}</span>
+          <button className="btn" disabled={(page+1)*10>=history.length} onClick={()=>setHistoryPage(page+1)}>Seterusnya</button>
+        </div>}
       </Panel>
+      {bulk&&<BulkImport kind="nilam" data={data} refresh={refresh} notify={notify} onClose={()=>setBulk(false)}/>}
     </>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useRef } from "react";
-import {apiFetch} from "../../lib/client-api";
+import {apiFetch, downloadProtected} from "../../lib/client-api";
 import {ProtectedImage} from "../../components/protected-image";
 import {
   Users,
@@ -48,6 +48,8 @@ import {
 } from "../litric";
 import { aggregate, MONTHS, coversRange } from "../../lib/domain.mjs";
 import { StudentReportControls, useStudentReport } from './student-report-controls';
+import BulkImport from './bulk-import';
+import { NILAM_DATASET, ROSTER_DATASET } from '../../lib/nilam-annual.mjs';
 const today = () =>
   new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kuala_Lumpur" });
 const monthStart = () => today().slice(0, 7) + "-01";
@@ -210,13 +212,15 @@ function Students(ctx: any) {
     [form, setForm] = useState<any>(null),
     [page, setPage] = useState(0),
     [merge, setMerge] = useState(false),
-    [classForm,setClassForm]=useState(false);
+    [classForm,setClassForm]=useState(false),
+    [bulk,setBulk]=useState(false);
   const admin = data.user.role === "admin";
   const {filters,setFilters,report}=useStudentReport(data);
   const list = report.records;
   const editStudent=(s:any)=>{const alias=data.aliases?.find((a:any)=>a.student_id===s.id&&a.verified&&!a.source_id.startsWith('missing:'));setForm({...s,source_id:alias?.source_id||'',source_verified:!!alias});};
   const fields = [
     { key: "name", label: "Nama penuh", required: true },
+    { key: "school_year_level", label: "Tahun / tingkatan" },
     {
       key: "class_id",
       label: "Kelas",
@@ -256,6 +260,8 @@ function Students(ctx: any) {
         action={
           admin && (
             <div className="button-row">
+              <button className="btn" onClick={()=>setBulk(true)}><Upload size={16}/> Import Senarai Murid</button>
+              <button className="btn" onClick={()=>downloadProtected('/api/bulk/template').catch(e=>ctx.notify(e.message))}><Download size={16}/> Muat Turun Templat Excel</button>
               <button className="btn" onClick={()=>setClassForm(true)}>Tambah kelas</button>
               <button className="btn" onClick={() => setMerge(true)}>
                 <Merge size={15} /> Semak identiti
@@ -271,6 +277,7 @@ function Students(ctx: any) {
         }
       >
         <StudentReportControls data={data} filters={filters} setFilters={(v:any)=>{setFilters(v);setPage(0);}} notify={ctx.notify}/>
+        {bulk&&<BulkImport kind="roster" data={data} refresh={ctx.refresh} notify={ctx.notify} onClose={()=>setBulk(false)}/>}
         <p className="pad">{list.length} murid · Murid berpindah atau tamat sekolah diarkibkan dengan sejarah kekal.</p>
         <div className="table-scroll">
           <table>
@@ -2046,7 +2053,7 @@ function Audit(ctx: any) {
     [review, setReview] = useState<any>(null);
   if (data.user.role !== "admin")
     return <Empty title="Akses pentadbir diperlukan" />;
-  const issues = data.ains_summaries.filter((r: any) => r.status === "review");
+  const issues = data.ains_summaries.filter((r: any) => r.status === "review" && r.nilam_reported==null);
   return (
     <>
       <Panel
@@ -2065,7 +2072,7 @@ function Audit(ctx: any) {
               </tr>
             </thead>
             <tbody>
-              {data.import_batches.map((b: any) => (
+              {data.import_batches.filter((b:any)=>![NILAM_DATASET,ROSTER_DATASET].includes(b.dataset)).map((b: any) => (
                 <tr key={b.id}>
                   <td>
                     <b>{b.filename}</b>

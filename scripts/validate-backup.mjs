@@ -14,6 +14,7 @@ export function validateBackup(dump) {
     "ains_summaries",
     "ains_snapshots",
     "ains_activity_records",
+    ...(dump.tables.nilam_annual_reports ? ["nilam_annual_reports"] : []),
     "ains_event_registry",
     "star_rule_versions",
     "audit_logs",

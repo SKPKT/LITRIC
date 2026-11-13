@@ -80,6 +80,8 @@ try {
     return value;
   }
   await call('/api/auth/bootstrap', { password: temporary }, 404);
+  await call('/api/bulk/preview', {}, 401);
+  await call('/api/batch/delete', {id:'unauthorized',confirmed:true}, 401);
   await call('/api/auth/bootstrap', { password: temporary }, 404, { headers: { 'X-Litric-Setup-Key': 'a'.repeat(64) } });
   expected((await call('/api/auth/bootstrap', {}, 400, { headers: { 'X-Litric-Setup-Key': setupKey } })).error.startsWith('Kata laluan mesti'), true);
   expected(await call('/api/auth/bootstrap', { password: temporary }, 200, { headers: { 'X-Litric-Setup-Key': setupKey } }), { ok: true, mustChange: true });
@@ -300,6 +302,72 @@ try {
   const linked=await call('/api/import/commit',{...missingInput,identityLinks:{2:{studentId:withoutAins.id,confirmed:true,reason:'BUKTI PADANAN SINTETIK DARIPADA REKOD SEKOLAH'}}});
   expected((await db.prepare('SELECT student_id FROM ains_summaries WHERE batch_id=?').bind(linked.batchId).first()).student_id,withoutAins.id);
   expected((await db.prepare('SELECT COUNT(*) AS n FROM students').first()).n,2);
+  async function bulk(action,kind,file,options={},status=200){
+    const form=new FormData(); form.set('kind',kind); form.set('file',file); form.set('options',JSON.stringify(options));
+    const encoded=new Response(form);
+    const r=await mf.dispatchFetch('https://litric.example.invalid/api/bulk/'+action,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':encoded.headers.get('Content-Type')},body:await encoded.arrayBuffer()});
+    const v=await r.json(); assert.equal(r.status,status,JSON.stringify(v)); checks++; return v;
+  }
+  const csv=(heading,rows)=>new File([heading+'\r\n'+rows.join('\r\n')],'SINTETIK.csv');
+  const heading='NAMA,ID DELIMA,TAHUN / TINGKATAN,KELAS,REKOD BACAAN 2026';
+  const fixture=csv(heading,Array.from({length:24},(_,i)=>['MURID BULK '+i,'bulk'+i+'@example.invalid',i<18?'4':'',i<18?'KELAS BULK':'',i].join(',')));
+  const fixturePreview=await bulk('preview','nilam',fixture);
+  expected([fixturePreview.year,fixturePreview.summary.rows,fixturePreview.summary.missing,fixturePreview.summary.invalidCounts,fixturePreview.rows[0].reported],[2026,24,6,0,0]);
+  await bulk('commit','nilam',fixture,{revision:fixturePreview.revision,decisions:{}},400);
+  const simultaneousOptions={revision:fixturePreview.revision,provenance:true,decisions:Object.fromEntries(fixturePreview.rows.map(r=>[r.row,{action:'create',confirmed:true}]))};
+  const sameFileResults=await Promise.all([bulk('commit','nilam',fixture,simultaneousOptions),bulk('commit','nilam',fixture,simultaneousOptions)]);
+  const fixtureImport=sameFileResults.find(x=>!x.duplicate);
+  expected(sameFileResults.filter(x=>x.duplicate).length,1);
+  expected(fixtureImport.stats.summariesCreated,24);
+  expected((await db.prepare('SELECT COUNT(*) AS n FROM nilam_annual_reports WHERE batch_id=?').bind(fixtureImport.batchId).first()).n,24);
+  const nilam2026=csv(heading,[`${input(2023,120).rows[0].name},synthetic-permanent-01,4,KELAS SINTETIK A,150`]);
+  const known=await bulk('preview','nilam',nilam2026);
+  expected(known.rows[0].matchedId,main.id);
+  const imported=await bulk('commit','nilam',nilam2026,{revision:known.revision,provenance:true,decisions:{2:{action:'match'}}});
+  const confirm=(id)=>({id,confirmApproved:true,confirmComplete:true,note:'Rujukan sumber sintetik disemak.'});
+  let after=await call('/api/state');
+  expected(after.metrics.lifetime.students.find(s=>s.id===main.id).achievement.level,null);
+  expected(after.ains_summaries.find(r=>r.batch_id===imported.batchId).nilam_reported,150);
+  await call('/api/bulk/verify',confirm(imported.batchId));
+  after=await call('/api/state');
+  expected(after.metrics.lifetime.students.find(s=>s.id===main.id).eligible,550);
+  const correction=csv(heading,[`${input(2023,120).rows[0].name},synthetic-permanent-01,4,KELAS SINTETIK A,100`]);
+  const beforeCorrection=await bulk('preview','nilam',correction);
+  expected(beforeCorrection.rows[0].previous,150);
+  await bulk('commit','nilam',correction,{revision:beforeCorrection.revision,provenance:true,decisions:{2:{action:'match'}}},400);
+  const revised=await bulk('commit','nilam',correction,{revision:beforeCorrection.revision,provenance:true,replace:true,decisions:{2:{action:'match',replace:true}}});
+  expected(revised.stats.summariesUpdated,1);
+  expected(JSON.parse((await db.prepare('SELECT detail FROM audit_logs WHERE entity_id=?').bind(revised.batchId).first()).detail).replacements[0].before,150);
+  await call('/api/bulk/verify',confirm(revised.batchId));
+  expected((await call('/api/state')).metrics.lifetime.students.find(s=>s.id===main.id).eligible,500);
+  const conflict=await bulk('preview','nilam',csv(heading,['NAMA LAIN,synthetic-permanent-01,,,9']));
+  expected(conflict.rows[0].conflict,true);
+  const overlapping=csv(heading.replace('2026','2025'),[`${input(2023,120).rows[0].name},synthetic-permanent-01,,,9`]);
+  const overlapPreview=await bulk('preview','nilam',overlapping);
+  expected(overlapPreview.rows[0].overlap,true);
+  const overlapNilam=await bulk('commit','nilam',overlapping,{revision:overlapPreview.revision,provenance:true,decisions:{2:{action:'match'}}});
+  await call('/api/bulk/verify',confirm(overlapNilam.batchId),409);
+  expected((await call('/api/state')).metrics.lifetime.students.find(s=>s.id===main.id).eligible,500);
+  const deletion=await call('/api/batch/delete-preview',{id:revised.batchId});
+  expected([deletion.counts.nilam_annual_reports,deletion.totalsMayChange],[1,true]);
+  await call('/api/batch/delete',{id:revised.batchId,revision:deletion.revision},409);
+  expected((await call('/api/state')).metrics.lifetime.students.find(s=>s.id===main.id).eligible,500);
+  await call('/api/batch/delete',{id:revised.batchId,revision:deletion.revision,confirmed:true});
+  expected((await call('/api/state')).metrics.lifetime.students.find(s=>s.id===main.id).eligible,550);
+  const oldQa=await call('/api/batch/delete-preview',{id:bid});
+  expected(oldQa.counts.ains_summaries,1);
+  await call('/api/batch/delete',{id:bid,revision:oldQa.revision,confirmed:true});
+  expected((await db.prepare('SELECT COUNT(*) AS n FROM ains_summaries').first()).n,historyCount+1);
+  const template=await mf.dispatchFetch('https://litric.example.invalid/api/bulk/template',{headers:{Authorization:'Bearer '+token}});
+  expected(template.status,200);
+  const rosterFile=new File([await template.arrayBuffer()],'SINTETIK-ROSTER.xlsx');
+  const roster=await bulk('preview','roster',rosterFile);
+  expected(roster.rows.length,1);
+  const registration=await bulk('commit','roster',rosterFile,{revision:roster.revision,provenance:true,academicYear:2026,decisions:{[roster.rows[0].row]:{action:'create',confirmed:true,enrolled:true}}});
+  expected(registration.stats.created,1);
+  expected((await call('/api/state')).students.find(s=>s.id===main.id).status,'current');
+  const reportDownload=await mf.dispatchFetch('https://litric.example.invalid/api/bulk/result?batch='+registration.batchId,{headers:{Authorization:'Bearer '+token}});
+  expected([reportDownload.status,(await reportDownload.text()).includes('Profil baharu')],[200,true]);
   await db.batch([
     db
       .prepare(
@@ -325,6 +393,8 @@ try {
   expected((await call("/api/state")).students.length, 0);
   await call("/api/student/archive", { id: student.id, archived: true }, 403);
   await call('/api/student',{name:'CUBA TANPA IZIN'},403);
+  await call('/api/bulk/preview',{},403);
+  await call('/api/batch/delete-preview',{id:bid},403);
   const teacherBook=await workbook();expected(teacherBook.worksheets[0].rowCount,7);
   token = adminToken;
   await call("/api/auth/logout", {});

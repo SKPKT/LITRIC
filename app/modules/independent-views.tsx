@@ -87,7 +87,7 @@ export function IndependentDashboard({ ctx }: any) {
           sub="Tidak termasuk murid berpindah atau diarkib"
         />
         <Stat
-          label="Murid Mempunyai Rekod AINS"
+          label="Murid Mempunyai Rekod AINS / NILAM"
           value={l.students.length}
           icon={BookOpen}
           sub="Identiti kekal · semua tahun"
@@ -109,7 +109,7 @@ export function IndependentDashboard({ ctx }: any) {
           value={
             data.import_batches.filter(
               (b: any) =>
-                b.status === "active" && b.verification !== "verified",
+                b.status === "active" && b.granularity !== "roster" && b.verification !== "verified",
             ).length
           }
           icon={ShieldCheck}
@@ -266,7 +266,7 @@ export function LifetimeAchievements({ ctx }: any) {
             </thead>
             <tbody>
               {report.records.map((s: any) => {
-                const history = s.history.map((h:any)=>({year:h.year,student:{eligible:h.total,reported:h.reported}}));
+                const history = s.history.map((h:any)=>({year:h.year,verification:h.verification,student:{eligible:h.total,reported:h.reported}}));
                 const annual = s.annual;
                 const earlier = history.filter((y:any)=>y.year < report.year);
                 const previous = !earlier.length||earlier.some((y:any)=>y.student.eligible==null)?null:earlier.reduce(
@@ -295,8 +295,9 @@ export function LifetimeAchievements({ ctx }: any) {
                             ? "Belum disahkan"
                             : fmt(y.student.eligible)}{" "}
                           <small className="muted">
-                            (sumber: {fmt(y.student.reported)})
+                            (dilaporkan: {fmt(y.student.reported)})
                           </small>
+                          {y.verification==='Pertindihan sumber'&&<small className="block muted">Liputan bertindih</small>}
                         </div>
                       ))}
                     </td>

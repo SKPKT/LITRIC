@@ -17,6 +17,7 @@ import { planIdentities } from './student-identity.mjs';
 import seed from "./seed-data.json";
 import {authenticate} from "./standalone-auth.mjs";
 import { prepareEvents } from "./events.mjs";
+import { readingDataWithAnnualReports, NILAM_DATASET, ROSTER_DATASET } from './nilam-annual.mjs';
 
 export const now = () => new Date().toISOString();
 export const uid = () => crypto.randomUUID();
@@ -101,6 +102,7 @@ export async function importBatch(u: any, input: any, options: any = {}) {
     fail("Had 5,000 baris sekolah untuk setiap kelompok.");
   if (!input.filename || !input.dataset)
     fail("Nama fail dan set data diperlukan.");
+  if ([NILAM_DATASET,ROSTER_DATASET].some(dataset=>norm(dataset)===norm(input.dataset))) fail("Nama set data ini dikhaskan untuk import khusus LITRIC.");
   const review = await reviewRows(input.rows, u.school_id);
   if (!review.rows.length)
     fail(
@@ -401,6 +403,7 @@ export async function loadData(u: any) {
     "classes",
     "import_batches",
     "ains_summaries",
+    "nilam_annual_reports",
     "school_reading_entries",
     "reading_targets",
     "reading_programmes",
@@ -432,8 +435,11 @@ export async function loadData(u: any) {
   data.ains_summaries = data.ains_summaries
     .map((r: any) => ({ ...r, canonical_id: canonical(r.student_id) }))
     .filter((r: any) => accessible.has(r.canonical_id));
+  data.nilam_annual_reports = data.nilam_annual_reports
+    .map((r: any) => ({ ...r, canonical_id: canonical(r.student_id) }))
+    .filter((r: any) => accessible.has(r.canonical_id));
   if (u.role !== "admin") {
-    const relevant = new Set(data.ains_summaries.map((r: any) => r.batch_id));
+    const relevant = new Set([...data.ains_summaries,...data.nilam_annual_reports].map((r: any) => r.batch_id));
     data.import_batches = data.import_batches.filter((b: any) =>
       relevant.has(b.id),
     );
@@ -551,6 +557,8 @@ export async function loadData(u: any) {
       fingerprint: null,
     }));
   }
+  data.ains_summaries = readingDataWithAnnualReports(data);
+  delete data.nilam_annual_reports;
   return data;
 }
 export const filtersFrom = (url: URL) =>
@@ -649,6 +657,8 @@ export async function mutation(u: any, path: string, p: any) {
     return p.granularity === "event" ? importEvents(u, p) : importBatch(u, p);
   if (path === "batch/rollback") {
     requireRole(u, ["admin"]);
+    if (await first("SELECT id FROM import_batches WHERE id=? AND school_id=? AND dataset IN (?,?)",id,school,NILAM_DATASET,ROSTER_DATASET))
+      fail("Gunakan Padam dalam Import terkini untuk kelompok ini.");
     await db().batch([
       statement(
         "DELETE FROM ains_event_registry WHERE batch_id=? AND school_id=?",
@@ -666,6 +676,8 @@ export async function mutation(u: any, path: string, p: any) {
   }
   if (path === "batch/restore") {
     requireRole(u, ["admin"]);
+    if (await first("SELECT id FROM import_batches WHERE id=? AND school_id=? AND dataset IN (?,?)",id,school,NILAM_DATASET,ROSTER_DATASET))
+      fail("Pemulihan ini hanya tersedia untuk import AINS.");
     const ev = await all(
       "SELECT * FROM ains_activity_records WHERE batch_id=? AND school_id=?",
       id,
@@ -709,6 +721,7 @@ export async function mutation(u: any, path: string, p: any) {
       school,
     );
     if (!b || b.status !== "active") fail("Kelompok tidak aktif.");
+    if ([NILAM_DATASET,ROSTER_DATASET].includes(b.dataset)) fail("Gunakan pengesahan khusus laporan NILAM dalam Import terkini.");
     const sourceRows=await all("SELECT raw FROM ains_summaries WHERE batch_id=? AND school_id=?",id,school);
     const sourceYears=new Set(sourceRows.map((r:any)=>JSON.parse(r.raw).year).filter(Boolean).map(Number));
     if(sourceYears.size>1 || (sourceYears.size===1&&!sourceYears.has(Number(p.year)))) fail("Tahun pengesahan bercanggah dengan tahun sumber.");
@@ -820,6 +833,7 @@ export async function mutation(u: any, path: string, p: any) {
     if (p.id) await studentAccess(u, p.id);
     const existing = p.id ? await first('SELECT * FROM students WHERE id=? AND school_id=?', id, school) : null;
     if(typeof p.name!=='string'||!p.name.trim()||p.name.trim().length>160||/[\x00-\x1f]/.test(p.name)) fail('Nama penuh murid diperlukan dan mesti tidak melebihi 160 aksara.');
+    if (p.school_year_level != null && (typeof p.school_year_level !== 'string' || p.school_year_level.length>160 || /[\x00-\x1f]/.test(p.school_year_level))) fail('Tahun / tingkatan tidak sah.');
     const name=p.name.trim().replace(/\s+/g,' ');
     const status=p.status||existing?.status||'current';
     if(!['current','former','graduated','transferred','unconfirmed'].includes(status))fail('Status murid tidak sah.');
@@ -840,6 +854,7 @@ export async function mutation(u: any, path: string, p: any) {
     const archived=inactive?(existing?.archived_at||at):existing&&existing.status!==status&&status==='current'?null:existing?.archived_at||null;
     const stmts:any[]=[existing ? statement('UPDATE students SET name=?,class_id=?,academic_year=?,status=?,member_id=?,archived_at=?,updated_at=? WHERE id=? AND school_id=?',name,p.class_id||null,year,status,text(p.member_id,200)||null,archived,at,id,school) : statement('INSERT INTO students (id,school_id,name,class_id,academic_year,status,member_id,archived_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)',id,school,name,p.class_id||null,year,status,text(p.member_id,200)||null,archived,at,at)];
     if(sourceId)stmts.push(alias?statement('UPDATE student_aliases SET verified=1 WHERE id=? AND school_id=?',alias.id,school):statement('INSERT INTO student_aliases(id,school_id,student_id,source_id,original_name,verified) VALUES (?,?,?,?,?,1)',uid(),school,id,sourceId,name));
+    if (typeof p.school_year_level === 'string') stmts.push(statement('UPDATE students SET school_year_level=? WHERE id=? AND school_id=?',p.school_year_level.trim()||null,id,school));
     if(p.class_id&&year)stmts.push(statement('INSERT INTO student_class_history(id,school_id,student_id,class_id,year,created_at) SELECT ?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM student_class_history WHERE school_id=? AND student_id=? AND class_id=? AND year=?)',uid(),school,id,p.class_id,year,at,school,id,p.class_id,year));
     await db().batch(stmts);
     await audit(u,'Simpan murid',id,{sourceIdentifierVerified:!!sourceId,duplicateReason:p.duplicate_confirmed?text(p.duplicate_reason,1000):null});

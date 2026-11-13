@@ -31,6 +31,7 @@ const order = [
   "import_batches",
   "star_rule_versions",
   "ains_summaries",
+  "nilam_annual_reports",
   "ains_snapshots",
   "ains_activity_records",
   "ains_event_registry",
@@ -48,6 +49,10 @@ const order = [
   "settings",
   "audit_logs",
 ];
+const additiveColumns = {
+  students: ['archived_at','school_year_level'],
+  nilam_annual_reports: ['id','school_id','batch_id','student_id','report_year','reported','school_year_level','class_name','row_number'],
+};
 const quote = (v) =>
   v == null
     ? "NULL"
@@ -65,12 +70,12 @@ const sql = [
 let count = 0;
 for (const table of order) {
   const spec = schema.tables[table];
-  if (!spec) throw new Error("Unknown table " + table);
+  if (!spec && !additiveColumns[table]) throw new Error("Unknown table " + table);
   for (const row of dump.tables[table] || []) {
     if ((table === "schools" ? row.id : row.school_id) !== dump.school)
       throw new Error("Cross-school row rejected.");
     const keys = Object.keys(row);
-    if (keys.some((k) => !spec.columns[k]))
+    if (keys.some((k) => !spec?.columns[k] && !additiveColumns[table]?.includes(k)))
       throw new Error("Unknown backup column.");
     sql.push(
       `INSERT INTO "${table}" (${keys.map((k) => '"' + k + '"').join(",")}) VALUES (${keys.map((k) => quote(row[k])).join(",")});`,
