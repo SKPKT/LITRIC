@@ -19,6 +19,13 @@ import {
 } from "../../../lib/server";
 import { certificatePDF, reportPDF, reportXLSX } from "../../../lib/exports";
 import {readLimitedBody} from "../../../lib/request-body.mjs";
+import { nilamWorkbook } from '../../../lib/nilam-workbook';
+import { processBulkImport, verifyNilamAnnual } from '../../../lib/bulk-import';
+import { deleteImport } from '../../../lib/import-deletion';
+import { MAX_BULK_BYTES } from '../../../lib/bulk-import-parser.mjs';
+import { NILAM_DATASET, ROSTER_DATASET } from '../../../lib/nilam-annual.mjs';
+import { rosterTemplate } from '../../../lib/roster-template';
+import Papa from 'papaparse';
 export const dynamic = "force-dynamic";
 const json = (data: any, status = 200) =>
   Response.json(data, {
@@ -42,10 +49,24 @@ async function handle(request: Request) {
     const url = new URL(request.url),
       path = url.pathname.replace(/^\/api\//, "");
     const origin = request.headers.get("origin");
-    if (origin && origin !== url.origin)
+    if (origin && origin !== ((env as any).LITRIC_AUTH_MODE === "standalone" ? ((env as any).FRONTEND_ORIGIN || url.origin) : url.origin))
       fail("Asal permintaan tidak dibenarkan.", 403);
     const u = await auth(request);
     if (request.method !== "GET") {
+      if (path === 'bulk/preview' || path === 'bulk/commit') {
+        requireRole(u,['admin']);
+        if (!request.headers.get('content-type')?.toLowerCase().startsWith('multipart/form-data;')) fail('Muat naik fail CSV atau XLSX.',415);
+        const bytes=await readLimitedBody(request,MAX_BULK_BYTES+400*1024);
+        let form: FormData, options: any;
+        try {
+          form=await new Response(bytes,{headers:{'content-type':request.headers.get('content-type')!}}).formData();
+          options=JSON.parse(String(form.get('options')||'{}'));
+        } catch { fail('Borang import tidak sah.'); }
+        const file=form.get('file');
+        if (!(file instanceof File) || file.size>MAX_BULK_BYTES) fail('Fail CSV atau XLSX sehingga 2 MB diperlukan.');
+        if (!options || typeof options!=='object' || Array.isArray(options)) fail('Pilihan import tidak sah.');
+        return json(await processBulkImport(u,String(form.get('kind')||''),file,options,path==='bulk/commit'));
+      }
       if (path === "file") {
         requireRole(u, ["admin", "teacher"]);
         const form = await new Response(await readLimitedBody(request), {headers: {"content-type": request.headers.get("content-type") || ""}}).formData(),
@@ -94,6 +115,8 @@ async function handle(request: Request) {
       try { p = JSON.parse(new TextDecoder().decode(bytes)); }
       catch { fail("Kandungan JSON tidak sah."); }
       if (!p || typeof p !== "object" || Array.isArray(p)) fail("Objek JSON diperlukan.");
+      if (path==='bulk/verify') return json(await verifyNilamAnnual(u,p));
+      if (path==='batch/delete-preview' || path==='batch/delete') return json(await deleteImport(u,p,path==='batch/delete'));
       return json(await mutation(u, path, p));
     }
     if (path === "state") {
@@ -168,6 +191,14 @@ async function handle(request: Request) {
     }
     if (path === "report") {
       requireRole(u, ["admin", "teacher"]);
+      if(url.searchParams.get('format')==='xlsx'){
+        const data=await loadData(u);
+        const filters=Object.fromEntries(['academicYear','classId','status','star','search'].map(k=>[k,url.searchParams.get(k)||'']));
+        let report;
+        try{report=await nilamWorkbook(data,filters);}catch(error:any){fail(error.message,400);}
+        await audit(u,'Muat turun laporan Excel',null,{filters,students:report.count});
+        return attachment(report.bytes,`LITRIC_LAPORAN_NILAM_${report.date}.xlsx`,'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      }
       const data = await loadData(u),
         filters = filtersFrom(url),
         pid = url.searchParams.get("programme");
@@ -221,6 +252,18 @@ async function handle(request: Request) {
         "LITRIC-laporan.pdf",
         "application/pdf",
       );
+    }
+    if (path==='bulk/template' || path==='bulk/result') {
+      requireRole(u,['admin']);
+      if (path==='bulk/template') return attachment(await rosterTemplate(),'LITRIC-Templat-Senarai-Murid.xlsx','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      const batch=await first('SELECT stats,created_at FROM import_batches WHERE school_id=? AND id=? AND dataset IN (?,?)',u.school_id,url.searchParams.get('batch'),NILAM_DATASET,ROSTER_DATASET);
+      if (!batch) fail('Keputusan import tidak ditemui.',404);
+      const r=JSON.parse(batch.stats);
+      const csv=Papa.unparse([
+        ['Fail',r.filename],['SHA-256',r.checksum],['Tahun pelaporan',r.year??''],['Format',r.source],['Tarikh',batch.created_at],['Akaun',r.staff],
+        [],['Baris','Keputusan','Catatan'],...r.resultRows.map((x:any)=>[x.row,x.result,x.notes]),
+      ],{escapeFormulae:true});
+      return attachment('\ufeff'+csv,'LITRIC-keputusan-import.csv','text/csv; charset=utf-8');
     }
     if (path === "errors") {
       requireRole(u, ["admin"]);
@@ -301,6 +344,7 @@ async function handle(request: Request) {
         "student_class_history",
         "import_batches",
         "ains_summaries",
+        "nilam_annual_reports",
         "ains_snapshots",
         "ains_activity_records",
         "ains_event_registry",
@@ -406,7 +450,7 @@ async function handle(request: Request) {
     }
     fail("Laluan tidak ditemui.", 404);
   } catch (e: any) {
-    console.error("LITRIC API", e.status || 500, e.message);
+    console.error("LITRIC API", e.status || 500);
     return json(
       {
         error: e.status

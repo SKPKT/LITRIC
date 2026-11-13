@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useRef } from "react";
-import {apiFetch} from "../../lib/client-api";
+import {apiFetch, downloadProtected} from "../../lib/client-api";
 import {ProtectedImage} from "../../components/protected-image";
 import {
   Users,
@@ -47,6 +47,9 @@ import {
   api,
 } from "../litric";
 import { aggregate, MONTHS, coversRange } from "../../lib/domain.mjs";
+import { StudentReportControls, useStudentReport } from './student-report-controls';
+import RosterImport from './roster-import';
+import { NILAM_DATASET, ROSTER_DATASET } from '../../lib/nilam-annual.mjs';
 const today = () =>
   new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kuala_Lumpur" });
 const monthStart = () => today().slice(0, 7) + "-01";
@@ -128,7 +131,7 @@ function Form({
                     ))}
                   </select>
                 ) : f.type === "checkbox" ? (
-                  <label className="checkbox">
+                  <span className="checkbox">
                     <input
                       type="checkbox"
                       checked={!!v[f.key]}
@@ -137,7 +140,7 @@ function Form({
                       }
                     />
                     {f.text || "Ya, disahkan"}
-                  </label>
+                  </span>
                 ) : f.type === "textarea" ? (
                   <textarea
                     required={f.required}
@@ -207,15 +210,17 @@ const classOptions = (data: any) =>
 function Students(ctx: any) {
   const { data, mutate, go } = ctx,
     [form, setForm] = useState<any>(null),
-    [find, setFind] = useState(""),
     [page, setPage] = useState(0),
-    [merge, setMerge] = useState(false);
+    [merge, setMerge] = useState(false),
+    [classForm,setClassForm]=useState(false),
+    [bulk,setBulk]=useState(false);
   const admin = data.user.role === "admin";
-  const list = data.students.filter(
-    (s: any) => !find || s.name.toLowerCase().includes(find.toLowerCase()),
-  );
+  const {filters,setFilters,report}=useStudentReport(data);
+  const list = report.records;
+  const editStudent=(s:any)=>{const alias=data.aliases?.find((a:any)=>a.student_id===s.id&&a.verified&&!a.source_id.startsWith('missing:'));setForm({...s,source_id:alias?.source_id||'',source_verified:!!alias});};
   const fields = [
     { key: "name", label: "Nama penuh", required: true },
+    { key: "school_year_level", label: "Tahun / tingkatan" },
     {
       key: "class_id",
       label: "Kelas",
@@ -235,11 +240,17 @@ function Students(ctx: any) {
       type: "select",
       options: [
         { value: "unconfirmed", label: "Belum disahkan" },
-        { value: "current", label: "Murid semasa" },
-        { value: "former", label: "Bekas murid" },
+        { value: "current", label: "Aktif" },
+        { value: "graduated", label: "Tamat Sekolah" },
+        { value: "former", label: "Tamat Sekolah (rekod lama)" },
+        { value: "transferred", label: "Berpindah" },
       ],
     },
     { key: "member_id", label: "ID ahli SMARTLIB" },
+    { key: 'source_id', label: 'ID murid sumber AINS', hint: 'Pilihan. Gunakan pengecam sebenar yang telah disemak; nama sahaja tidak digunakan untuk padanan automatik.' },
+    { key: 'source_verified',label:'Pengesahan pengecam AINS',type:'checkbox',text:'Saya telah mengesahkan ID sumber ini berdasarkan rekod sekolah.',show:(v:any)=>!!v.source_id },
+    { key: 'duplicate_confirmed',label:'Individu berlainan dengan nama sama',type:'checkbox',text:'Saya mengesahkan ini individu berbeza, bukan profil pendua.' },
+    { key: 'duplicate_reason',label:'Bukti individu berbeza',type:'textarea',required:true,show:(v:any)=>!!v.duplicate_confirmed },
   ];
   return (
     <>
@@ -249,34 +260,25 @@ function Students(ctx: any) {
         action={
           admin && (
             <div className="button-row">
+              <button className="btn" onClick={()=>setBulk(true)}><Upload size={16}/> Import Senarai Murid</button>
+              <button className="btn" onClick={()=>downloadProtected('/api/bulk/template').catch(e=>ctx.notify(e.message))}><Download size={16}/> Muat Turun Templat Excel</button>
+              <button className="btn" onClick={()=>setClassForm(true)}>Tambah kelas</button>
               <button className="btn" onClick={() => setMerge(true)}>
                 <Merge size={15} /> Semak identiti
               </button>
               <button
                 className="btn primary"
-                onClick={() => setForm({ status: "unconfirmed" })}
+                onClick={() => setForm({ status: "current", academic_year:new Date().getFullYear() })}
               >
-                <Plus size={16} /> Tambah murid
+                <Plus size={18} /> Tambah Murid
               </button>
             </div>
           )
         }
       >
-        <div className="table-toolbar">
-          <div className="input-icon">
-            <Search size={16} />
-            <input
-              aria-label="Cari dalam direktori"
-              placeholder="Cari nama murid…"
-              value={find}
-              onChange={(e) => {
-                setFind(e.target.value);
-                setPage(0);
-              }}
-            />
-          </div>
-          <Pill tone="neutral">{list.length} murid</Pill>
-        </div>
+        <StudentReportControls data={data} filters={filters} setFilters={(v:any)=>{setFilters(v);setPage(0);}} notify={ctx.notify}/>
+        {bulk&&<RosterImport data={data} refresh={ctx.refresh} onClose={()=>setBulk(false)}/>}
+        <p className="pad">{list.length} murid · Murid berpindah atau tamat sekolah diarkibkan dengan sejarah kekal.</p>
         <div className="table-scroll">
           <table>
             <thead>
@@ -285,6 +287,8 @@ function Students(ctx: any) {
                 <th>Kelas</th>
                 <th>Tahun</th>
                 <th>Enrolmen</th>
+                <th>Jumlah bacaan terkumpul</th>
+                <th>Pencapaian Bintang</th>
                 <th>Profil</th>
               </tr>
             </thead>
@@ -311,15 +315,11 @@ function Students(ctx: any) {
                     <td>{s.academic_year || "Belum disahkan"}</td>
                     <td>
                       <Pill tone={s.status === "current" ? "green" : "neutral"}>
-                        {(
-                          {
-                            current: "Semasa",
-                            former: "Bekas murid",
-                            unconfirmed: "Belum disahkan",
-                          } as Record<string, string>
-                        )[s.status] || s.status}
+                        {s.statusLabel}
                       </Pill>
                     </td>
+                    <td>{s.total==null?(s.hasAins?'Belum disahkan':'Tiada rekod AINS'):fmt(s.total)}</td>
+                    <td>{s.achievement.level==null?'Belum dapat disahkan':`${s.achievement.level} Bintang`}</td>
                     <td>
                       <div className="button-row">
                         <button
@@ -331,11 +331,12 @@ function Students(ctx: any) {
                         {admin && (
                           <button
                             className="text-btn"
-                            onClick={() => setForm(s)}
+                            onClick={() => editStudent(s)}
                           >
                             Edit
                           </button>
                         )}
+                        {admin&&<button className="text-btn" onClick={()=>mutate("student/archive",{id:s.id,archived:!s.archived_at})}>{s.archived_at?"Pulih arkib":"Arkibkan"}</button>}
                       </div>
                     </td>
                   </tr>
@@ -372,9 +373,10 @@ function Students(ctx: any) {
           fields={fields}
           initial={form}
           onClose={() => setForm(null)}
-          onSubmit={(v: any) => mutate("student", v)}
+          onSubmit={async(v: any) => {await mutate("student", v);if(!form.id){setFilters({status:'all',academicYear:'',classId:'',star:'all',search:v.name});setPage(0);}}}
         />
       )}{" "}
+      {classForm&&<Form title="Tambah kelas" fields={[{key:"name",label:"Nama kelas",required:true},{key:"year",label:"Tahun akademik",type:"number",min:2000,max:2100,required:true}]} initial={{year:new Date().getFullYear()}} onClose={()=>setClassForm(false)} onSubmit={(v:any)=>mutate("class",v)}/>}
       {merge && <IdentityReview {...ctx} onClose={() => setMerge(false)} />}
     </>
   );
@@ -494,7 +496,9 @@ function Profile(ctx: any) {
       filters: { dataset: ctx.filters.dataset, year },
     }),
     p = m.students[0],
-    a = p?.achievement || { level: null, progress: 0 },
+    lifetime=aggregate({students:[s],rows:data.ains_summaries,batches:data.import_batches,rule:data.rule,filters:{}}),
+    lifetimeStudent=lifetime.students[0],
+    a = lifetimeStudent?.achievement || { level: null, progress: 0 },
     entries = data.school_reading_entries.filter(
       (r: any) => r.canonical_id === id,
     ),
@@ -535,14 +539,14 @@ function Profile(ctx: any) {
       <div className="kpis">
         <div className="kpi">
           <span>Bacaan dalam sumber</span>
-          <strong>{fmt(p?.reported ?? 0)}</strong>
+          <strong>{fmt(p?.reported)}</strong>
           <small>{ctx.filters.dataset}</small>
         </div>
         <div className="kpi">
-          <span>Layak pengiraan bintang</span>
-          <strong>{fmt(p?.eligible)}</strong>
+          <span>Bacaan terkumpul disahkan</span>
+          <strong>{fmt(lifetimeStudent?.eligible)}</strong>
           <small>
-            {p?.eligible == null ? "Tempoh belum disahkan" : "Skop terpilih"}
+            {lifetimeStudent?.eligible == null ? "Tempoh belum disahkan" : "Semua tahun persekolahan"}
           </small>
         </div>
         <div className="kpi">
@@ -570,7 +574,7 @@ function Profile(ctx: any) {
           sub={
             a.level == null
               ? "Sahkan skop bacaan untuk melihat pencapaian"
-              : "Pencapaian mengikut skop terpilih"
+              : "Pencapaian terkumpul sepanjang persekolahan"
           }
         >
           <div className="profile-badges">
@@ -591,7 +595,7 @@ function Profile(ctx: any) {
                   : `${a.level} Bintang · ${a.remaining} bahan lagi menuju ${a.level + 1} Bintang`}
             </b>
             <span>
-              {fmt(p?.eligible)} / {a.next || "720+"}
+              {fmt(lifetimeStudent?.eligible)} / {a.next || "720+"}
             </span>
           </div>
           <progress max={100} value={a.progress} />
@@ -657,7 +661,7 @@ function Profile(ctx: any) {
                     {b.period_start
                       ? `${b.period_start} – ${b.period_end}`
                       : "Tempoh belum disahkan"}{" "}
-                    · {b.verification}
+                    · {b.verification === "verified" ? "Disahkan" : "Belum disahkan"}
                   </small>
                 </div>
               ))}
@@ -2049,7 +2053,7 @@ function Audit(ctx: any) {
     [review, setReview] = useState<any>(null);
   if (data.user.role !== "admin")
     return <Empty title="Akses pentadbir diperlukan" />;
-  const issues = data.ains_summaries.filter((r: any) => r.status === "review");
+  const issues = data.ains_summaries.filter((r: any) => r.status === "review" && r.nilam_reported==null);
   return (
     <>
       <Panel
@@ -2068,7 +2072,7 @@ function Audit(ctx: any) {
               </tr>
             </thead>
             <tbody>
-              {data.import_batches.map((b: any) => (
+              {data.import_batches.filter((b:any)=>![NILAM_DATASET,ROSTER_DATASET].includes(b.dataset)).map((b: any) => (
                 <tr key={b.id}>
                   <td>
                     <b>{b.filename}</b>

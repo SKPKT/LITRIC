@@ -1,0 +1,11 @@
+
+# Import pukal dan pemadaman import LITRIC
+
+- Import Data AINS menyediakan **Import Laporan Bacaan NILAM**. Pengurusan Murid menyediakan **Import Senarai Murid** dan **Muat Turun Templat Excel**. Tambah Murid kekal tersedia.
+- CSV UTF-8 (termasuk BOM) dan XLSX satu jadual disokong sehingga 2 MB dan 500 baris. Peta NILAM ialah NAMA → nama murid, ID DELIMA → pengecam, TAHUN / TINGKATAN → tahap sekolah, KELAS → kelas, REKOD BACAAN YYYY → jumlah tahunan dilaporkan dan tahun pelaporan. Senarai murid menerima STATUS MURID, ID RUJUKAN MURID, TAHUN AKADEMIK dan KOD SEKOLAH jika dibekalkan. Tanpa lajur kod sekolah, pentadbir mengesahkan sumber ABA6052.
+- Tahap sekolah disimpan berasingan daripada tahun kalendar. Profil sedia ada hanya dikemas kini melalui keputusan eksplisit. Status arkib, pengecam dalaman dan sejarah dikekalkan. Pautan identiti memerlukan pengecam disahkan atau keputusan pentadbir. Nama sahaja tidak digunakan untuk padanan automatik.
+- Pelayan mengira SHA-256 daripada kandungan fail dan menyemak semula pratonton sebelum satu transaksi D1. Untuk setiap murid dan tahun, hanya petikan NILAM aktif yang terkini dipakai. Penggantian memerlukan semakan nilai sebelum/selepas. Petikan sebelumnya dan jejak audit dikekalkan. Kelulusan dan liputan setahun disahkan berasingan. Liputan AINS yang mungkin bertindih menghalang pengiraan petikan itu.
+- **Import terkini → Padam** mengesahkan kelompok dan kiraan semasa sebelum transaksi. Hanya rekod milik kelompok dipadam. Pautan rekod bacaan sekolah dinyahpaut apabila perlu. Profil murid dan data kelompok lain dikekalkan.
+- Migrasi tambahan `0003_bulk_import.sql` menggunakan D1 `litric-school` sedia ada. Sandaran produksi disimpan dalam direktori Windows dengan akses terhad dan diuji dalam SQLite menggunakan semakan integriti dan kunci asing.
+- Ujian unit 62 lulus, 2 ujian dataset peribadi dilangkau. 210 semakan integrasi Worker/D1 lulus, termasuk import serentak, petikan gantian lebih rendah, pertindihan, padanan, pemadaman terhad, akses tanpa sesi, login GPM, dan bacaan semula templat Excel. TypeScript, production build dan semakan aset awam lulus.
+- CSV sekolah diperiksa secara setempat untuk mengesahkan format. Ujian dan bahan awam menggunakan data rekaan. Fail sekolah perlu dipratonton dan disahkan oleh GPM dalam aplikasi.

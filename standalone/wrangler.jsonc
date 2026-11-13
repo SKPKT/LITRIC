@@ -1,0 +1,29 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "litric-api",
+  "main": "worker.ts",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "vars": {
+    "LITRIC_AUTH_MODE": "standalone"
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "SCHOOL_SERVICE", "class_name": "LitricSchoolService" }]
+  },
+  "migrations": [{ "tag": "litric-service-v1", "new_sqlite_classes": ["LitricSchoolService"] }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "litric-school",
+      "database_id": "00000000-0000-4000-8000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "assets": {
+    "directory": "../dist-worker",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/health"]
+  }
+}

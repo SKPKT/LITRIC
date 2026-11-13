@@ -188,7 +188,7 @@ test("unknown year remains unverified for star totals", () => {
   assert.equal(m.students[0].eligible, null);
   assert.equal(m.students[0].achievement.level, null);
 });
-test("years are not combined for stars, identity remains unique", () => {
+test("verified independent years combine for stars, identity remains unique", () => {
   const m = aggregate({
     students: [s],
     rows: [r("a", "a", 200), r("b", "b", 200)],
@@ -202,7 +202,9 @@ test("years are not combined for stars, identity remains unique", () => {
     ],
   });
   assert.equal(m.students.length, 1);
-  assert.equal(m.students[0].eligible, null);
+  assert.equal(m.students[0].eligible, 400);
+  assert.equal(m.students[0].achievement.level, 2);
+  assert.equal(m.students[0].achievement.remaining, 32);
   assert.equal(m.multiyear, true);
 });
 test("rolled-back import is excluded", () => {

@@ -1,70 +1,18 @@
-name: Build and deploy LITRIC Pages
+name: Legacy Pages build only (no deployment)
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
-concurrency:
-  group: litric-pages-${{ github.ref }}
-  cancel-in-progress: false
 jobs:
-  build:
+  validate-legacy-static-build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
         with:
-          node-version: '22'
+          node-version: "22"
           cache: npm
       - run: npm ci --include=dev --include=optional
-      - name: Refuse private datasets in public source
-        run: npm run check:public
-      - run: npm test
-      - run: npm run typecheck
-      - name: Build static frontend for exact /LITRIC/ path
-        run: npm run build:pages
-      - name: Configure Pages
-        if: github.event_name != 'pull_request'
-        uses: actions/configure-pages@v5
-      - name: Upload frontend only
-        if: github.event_name != 'pull_request'
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: dist-pages
-      - name: Report build failure
-        if: failure()
-        run: |
-          echo '::error::LITRIC validation or Pages build failed. No deployment was attempted.'
-          echo 'LITRIC build failed. Inspect the failing step above.' >> "$GITHUB_STEP_SUMMARY"
-  deploy:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-      - name: Verify actual public deployment
-        env:
-          PAGE_URL: ${{ steps.deployment.outputs.page_url }}
-        run: |
-          curl --fail --location --retry 5 --retry-delay 10 "$PAGE_URL" --output /tmp/litric.html
-          grep -q 'LITRIC' /tmp/litric.html
-          grep -q '/LITRIC/assets/' /tmp/litric.html
-          echo "LITRIC deployed and HTTP-checked: $PAGE_URL" >> "$GITHUB_STEP_SUMMARY"
-      - name: Report deployment failure
-        if: failure()
-        run: |
-          echo '::error::LITRIC Pages deployment or live URL verification failed.'
-          echo 'Deployment is not verified. Inspect Pages settings, environment approval, and deployment logs.' >> "$GITHUB_STEP_SUMMARY"
+      - run: npm run build:pages
+      - run: npm run check:standalone

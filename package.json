@@ -1,6 +1,6 @@
 {
   "name": "litric",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "private": true,
   "engines": {
     "node": ">=22.13.0"
@@ -14,18 +14,25 @@
     "db:generate": "drizzle-kit generate",
     "test": "node --test tests/*.test.mjs",
     "typecheck": "tsc --noEmit",
-    "build:pages": "vite build --config vite.pages.config.ts && node scripts/check-pages.mjs",
+    "build:pages": "vite build --config vite.pages.config.ts --mode pages && node scripts/check-pages.mjs",
     "preview:pages": "vite preview --config vite.pages.config.ts --host 127.0.0.1 --port 4173",
     "export:public": "node scripts/export-public.mjs",
-    "check:public": "node scripts/check-public-source.mjs"
+    "check:public": "node scripts/check-public-source.mjs",
+    "dev:standalone": "vite --config vite.pages.config.ts --mode cloudflare --host 127.0.0.1 --port 4173",
+    "dev:api": "wrangler dev --config standalone/wrangler.jsonc --port 8788",
+    "build:api": "wrangler deploy --config standalone/wrangler.jsonc --dry-run --outdir dist-api",
+    "bootstrap:admin": "node scripts/bootstrap-admin.mjs",
+    "bootstrap:cloudflare": "node scripts/bootstrap-cloudflare.mjs",
+    "check:standalone": "node scripts/check-standalone-build.mjs",
+    "test:api": "node tests/standalone.integration.mjs",
+    "build:cloudflare": "vite build --config vite.pages.config.ts --mode cloudflare && node scripts/check-standalone-build.mjs dist-worker",
+    "configure:cloudflare": "node scripts/configure-cloudflare.mjs",
+    "deploy:cloudflare": "wrangler deploy --config standalone/wrangler.generated.jsonc"
   },
   "dependencies": {
-    "fflate": "0.8.3",
-    "pdf-lib": "1.17.1",
-    "qrcode": "1.5.4",
-    "papaparse": "5.5.3",
     "@base-ui/react": "^1.7.0",
     "@hookform/resolvers": "^5.7.1",
+    "@noble/hashes": "2.0.1",
     "@shadcn/react": "^0.3.0",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",
@@ -33,10 +40,15 @@
     "date-fns": "^4.4.0",
     "drizzle-orm": "0.45.2",
     "embla-carousel-react": "^8.6.0",
+    "exceljs": "4.4.0",
+    "fflate": "0.8.3",
     "input-otp": "^1.4.2",
     "lucide-react": "^1.31.0",
     "next": "16.4.2",
     "next-themes": "^0.4.6",
+    "papaparse": "5.5.3",
+    "pdf-lib": "1.17.1",
+    "qrcode": "1.5.4",
     "radix-ui": "^1.6.7",
     "react": "19.2.6",
     "react-day-picker": "^10.0.1",
@@ -47,14 +59,15 @@
     "sonner": "^2.0.8",
     "tailwind-merge": "3.6.0",
     "vaul": "^1.1.2",
-    "zod": "^3.25.76",
-    "exceljs": "4.4.0"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
     "@cloudflare/workers-types": "4.20260515.1",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
+    "@types/papaparse": "5.3.16",
+    "@types/qrcode": "1.5.6",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.2",
@@ -70,9 +83,7 @@
     "typescript": "5.9.3",
     "vinext": "1.0.0-beta.5",
     "vite": "8.0.13",
-    "wrangler": "4.92.0",
-    "@types/qrcode": "1.5.6",
-    "@types/papaparse": "5.3.16"
+    "wrangler": "4.92.0"
   },
   "type": "module",
   "overrides": {
