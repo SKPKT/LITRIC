@@ -368,6 +368,36 @@ try {
   expected((await call('/api/state')).students.find(s=>s.id===main.id).status,'current');
   const reportDownload=await mf.dispatchFetch('https://litric.example.invalid/api/bulk/result?batch='+registration.batchId,{headers:{Authorization:'Bearer '+token}});
   expected([reportDownload.status,(await reportDownload.text()).includes('Profil baharu')],[200,true]);
+  const rosterHeading='Nama Murid,ID DELIMa Murid,Nama Kelas,Tahun';
+  const name=input(2023,120).rows[0].name;
+  const rosterSelection=csv(rosterHeading,[
+    'MURID REKAAN TANPA ID,,KELAS REKAAN,2026',
+    name+',synthetic-permanent-01,KELAS GANTIAN,2026',
+    'NAMA BERCANGGAH,conflict@example.invalid,KELAS REKAAN,2026',
+    'PENDUA A,duplicate@example.invalid,,2026',
+    'PENDUA B,duplicate@example.invalid,,2026',
+  ]);
+  const originalHistory=(await db.prepare('SELECT * FROM ains_summaries WHERE student_id=? ORDER BY id').bind(main.id).all()).results;
+  const rosterPreview=await bulk('preview','roster',rosterSelection);
+  expected(rosterPreview.rows[1].matchedId,main.id);
+  expected(rosterPreview.summary.duplicates,2);
+  const options={revision:rosterPreview.revision,provenance:true,confirmEnrolled:true,selection:[2,3,4,5],decisions:{2:{action:'create'},3:{action:'match'},4:{action:'match',studentId:main.id},5:{action:'create'}}};
+  const selected=await bulk('commit','roster',rosterSelection,options);
+  expected([selected.stats.created,selected.stats.matched,selected.stats.updated],[1,1,0]);
+  expected(selected.resultRows.filter(r=>r.result==='Perlu semakan').map(r=>r.row),[4,5]);
+  expected((await db.prepare('SELECT class_id FROM students WHERE id=?').bind(main.id).first()).class_id,classA.id);
+  await bulk('commit','roster',rosterSelection,options,409);
+  const remaining=await bulk('preview','roster',rosterSelection);
+  expected(remaining.rows.map(r=>r.imported),[true,true,false,false,false]);
+  const corrected=await bulk('commit','roster',rosterSelection,{
+    revision:remaining.revision,provenance:true,selection:[4],
+    decisions:{4:{action:'update',studentId:main.id,reason:'Pengecam baharu disahkan berdasarkan daftar sekolah.'}},
+  });
+  expected(corrected.stats.updated,1);
+  const changedProfile=await db.prepare('SELECT s.name,c.name AS className FROM students s JOIN classes c ON c.id=s.class_id WHERE s.id=?').bind(main.id).first();
+  expected(changedProfile,{name:'NAMA BERCANGGAH',className:'KELAS REKAAN'});
+  expected((await db.prepare('SELECT student_id FROM student_aliases WHERE source_id=?').bind('conflict@example.invalid').first()).student_id,main.id);
+  expected((await db.prepare('SELECT * FROM ains_summaries WHERE student_id=? ORDER BY id').bind(main.id).all()).results,originalHistory);
   await db.batch([
     db
       .prepare(

@@ -6,6 +6,29 @@ import { parseBulkImport } from '../lib/bulk-import-parser.mjs';
 import { aggregate } from '../lib/domain.mjs';
 import { latestAnnualReports, readingDataWithAnnualReports, NILAM_DATASET } from '../lib/nilam-annual.mjs';
 import { studentReport } from '../lib/student-report.mjs';
+import { rosterIssue, suggestedRosterAction } from '../lib/roster-selection.mjs';
+
+test('Roster recognizes common DELIMa and class headers and distinguishes school level from calendar year',async()=>{
+  const bytes=new TextEncoder().encode('Nama Pelajar,ID DELIMa Murid,Nama Kelas,Tahun\nRekaan A,a@example.invalid,Melur,4\nRekaan B,b@example.invalid,Cempaka,2026');
+  const result=await parseBulkImport('rekaan.csv',bytes,'roster');
+  assert.deepEqual(result.rows.map(r=>[r.delima,r.className,r.level,r.academicYear]),[
+    ['a@example.invalid','Melur','4',null],['b@example.invalid','Cempaka','',2026],
+  ]);
+});
+
+test('Roster suggestions, optional identifiers and ambiguous links use the same eligibility rules',()=>{
+  const row={issues:[],hasIdentifier:false,className:'Rekaan'};
+  const profile={id:'existing',academic_year:2026};
+  assert.equal(suggestedRosterAction(row),'create');
+  assert.equal(rosterIssue(row,{action:'create'},null,2026),'');
+  assert.match(rosterIssue(row,{action:'create'},null,null),/tahun akademik/);
+  assert.match(rosterIssue({...row,exactName:true},{action:'create'},null,2026),/bukti/);
+  assert.match(rosterIssue({...row,manual:true},{action:'match'},profile,2026),/bukti/);
+  const verified={...row,hasIdentifier:true,matchedId:profile.id};
+  assert.equal(suggestedRosterAction(verified),'match');
+  assert.equal(rosterIssue(verified,{action:'update'},profile,2026),'');
+  assert.match(rosterIssue(verified,{action:'create'},null,2026),/dipautkan/);
+});
 
 const headings = 'NAMA,ID DELIMA,TAHUN / TINGKATAN,KELAS,REKOD BACAAN 2026';
 const csv = (value,kind='nilam')=>parseBulkImport('rekaan.csv',new TextEncoder().encode(value),kind);

@@ -3,6 +3,7 @@ import { db, all, first, statement, requireRole, fail, uid, now } from './server
 import { norm, identityKey } from './domain.mjs';
 import { parseBulkImport } from './bulk-import-parser.mjs';
 import { annualOverlap, latestAnnualReports, NILAM_DATASET, ROSTER_DATASET } from './nilam-annual.mjs';
+import { rosterIssue } from './roster-selection.mjs';
 
 const checksum = async (bytes: Uint8Array) =>
   [...new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(bytes)))].map(n=>n.toString(16).padStart(2,'0')).join('');
@@ -25,8 +26,11 @@ export async function processBulkImport(u: any, kind: string, file: File, option
   const parsed = await parseBulkImport(filename,bytes,kind);
   const hash = await checksum(bytes);
   const dataset = datasetFor(kind);
-  const existing = await first('SELECT id,status,stats,created_at FROM import_batches WHERE school_id=? AND dataset=? AND file_hash=?',school,dataset,hash);
-  if (existing && commit) return {duplicate:true,batchId:existing.id,...JSON.parse(existing.stats),createdAt:existing.created_at};
+  const past = await all('SELECT id,stats,created_at FROM import_batches WHERE school_id=? AND dataset=? AND file_hash=? ORDER BY created_at DESC',school,dataset,hash);
+  const existing = past[0];
+  const selective = kind==='roster' && Array.isArray(options.selection);
+  const imported = new Set(past.flatMap(b=>(JSON.parse(b.stats).resultRows||[]).filter((r:any)=>r.result!=='Dilangkau' && r.result!=='Perlu semakan').map((r:any)=>r.row)));
+  if (existing && commit && !selective) return {duplicate:true,batchId:existing.id,...JSON.parse(existing.stats),createdAt:existing.created_at};
   const [students, aliases, classes, batches, nilam, summaries] = await Promise.all([
     all('SELECT * FROM students WHERE school_id=?',school),
     all('SELECT * FROM student_aliases WHERE school_id=?',school),
@@ -65,7 +69,7 @@ export async function processBulkImport(u: any, kind: string, file: File, option
   const view = rows.map(r=>{
     const duplicate = r.keys.some((key:string)=>usedKeys.get(key)!>1);
     const issues = [...r.issues,...(duplicate?['Pengecam berulang dalam fail.']:[]),...(r.targets.length>1?['Pengecam dipautkan kepada profil berlainan. Selesaikan identiti dahulu.']:[])];
-    return {...r, duplicate,issues};
+    return {...r, duplicate,issues,hasIdentifier:r.keys.length>0,imported:kind==='roster'&&imported.has(r.row)};
   });
   const summary = {
     rows:view.length, complete:view.filter(r=>!r.missing).length, missing:view.filter(r=>r.missing).length,
@@ -86,10 +90,21 @@ export async function processBulkImport(u: any, kind: string, file: File, option
   if (!options.decisions || typeof options.decisions!=='object' || Array.isArray(options.decisions)) fail('Keputusan baris diperlukan.');
   const defaultYear = options.academicYear ? Number(options.academicYear) : null;
   if (defaultYear!==null && !isYear(defaultYear)) fail('Tahun akademik tidak sah.');
+  const selected = new Set<number>();
+  if (selective) {
+    const available = new Set(view.map(r=>r.row));
+    for (const row of options.selection) {
+      if (!Number.isInteger(row) || !available.has(row) || selected.has(row)) fail('Pilihan murid tidak sah.');
+      selected.add(row);
+    }
+    if (!selected.size) fail('Pilih sekurang-kurangnya seorang murid.');
+  }
   const at = now(), batchId=uid();
   const writes: any[] = [], resultRows: any[] = [], replacements: any[] = [];
   const stats = Object.fromEntries(countKeys.map(k=>[k,0])) as Record<string,number>;
   const processed = new Set<string>(), newNames = new Set<string>();
+  const auditRows: any[] = [];
+  const savedRows: number[] = [];
   const classFor = (name: string, year: number) => {
     let c = classes.find(c=>norm(c.name)===norm(name)&&c.year===year);
     if (!c) {
@@ -101,21 +116,32 @@ export async function processBulkImport(u: any, kind: string, file: File, option
   };
   for (const r of view) {
     const d = options.decisions[r.row] || {};
-    const action = d.action || '';
+    const action = selective && !selected.has(r.row) ? 'skip' : d.action || '';
     if (action==='skip') {
       stats.skipped++;
-      if (r.missing || r.manual || r.overlap || r.issues.length) stats.review++;
+      if (selective ? !r.imported && (r.issues.length || r.conflict || r.manual && r.matchedId || r.exactName && !r.matchedId || r.duplicateName) : r.missing || r.manual || r.overlap || r.issues.length) stats.review++;
       resultRows.push({row:r.row,result:'Dilangkau',notes:r.issues.join(' ') || 'Dipilih untuk semakan atau dilangkau.'});
       continue;
+    }
+    const target = action==='create' ? null : profiles.get(d.studentId || r.matchedId);
+    const year = r.academicYear || (selective && target?.academic_year ? null : defaultYear) || (kind==='nilam' && !r.missing ? parsed.year : null);
+    if (selective) {
+      const issue = rosterIssue(r,d,target,year)
+        || (target && processed.has(target.id) ? 'Profil ini sudah dipilih pada baris lain.' : '')
+        || (action==='create' && newNames.has(norm(r.name)) && !r.hasIdentifier ? 'Nama berulang memerlukan pengecam unik.' : '');
+      if (issue) {
+        stats.review++;
+        resultRows.push({row:r.row,result:'Perlu semakan',notes:issue});
+        continue;
+      }
     }
     if (r.issues.length) fail('Baris '+r.row+': langkau atau betulkan isu yang ditunjukkan.');
     if (!['create','match','update'].includes(action) || (kind==='nilam' && action==='update')) fail('Baris '+r.row+': pilih keputusan padanan atau langkau.');
     const creating = action==='create';
-    const target = creating ? null : profiles.get(d.studentId || r.matchedId);
     if (!creating && (!target || target.merged_into)) fail('Baris '+r.row+': pilih profil murid yang sah.');
     if (r.targets.length && (creating || r.targets[0]!==target.id)) fail('Baris '+r.row+': pengecam sedia ada tidak boleh dialihkan.',409);
-    if ((r.manual || creating || action==='update') && d.confirmed!==true) fail('Baris '+r.row+': sahkan bukti identiti atau perubahan profil.');
-    if ((r.conflict || r.exactName && creating || r.duplicateName || !r.keys.length) && (typeof d.reason!=='string' || d.reason.trim().length<10 || d.reason.length>500))
+    if (!selective && (r.manual || creating || action==='update') && d.confirmed!==true) fail('Baris '+r.row+': sahkan bukti identiti atau perubahan profil.');
+    if (!selective && (r.conflict || r.exactName && creating || r.duplicateName || !r.keys.length) && (typeof d.reason!=='string' || d.reason.trim().length<10 || d.reason.length>500))
       fail('Baris '+r.row+': catat sebab padanan atau bukti identiti (10–500 aksara).');
     const student = target?.id || uid();
     if (processed.has(student)) fail('Beberapa baris merujuk profil murid yang sama. Pilih satu baris.',409);
@@ -123,9 +149,9 @@ export async function processBulkImport(u: any, kind: string, file: File, option
     if (creating && newNames.has(norm(r.name)) && (!r.keys.length || !d.reason?.trim())) fail('Baris '+r.row+': nama berulang memerlukan pengecam dan bukti individu berlainan.');
     if (creating) newNames.add(norm(r.name));
     const level = r.level || target?.school_year_level || null;
-    const year = r.academicYear || defaultYear || (kind==='nilam' && !r.missing ? parsed.year : null);
     if (creating) {
-      const status = kind==='roster' && d.enrolled===true && !r.missing && year ? (r.status || 'current') :
+      const enrolled = selective ? options.confirmEnrolled===true && !!r.className : d.enrolled===true && !r.missing;
+      const status = kind==='roster' && enrolled && year ? (r.status || 'current') :
         kind==='roster' && ['transferred','graduated'].includes(r.status) ? r.status : 'unconfirmed';
       const classId = r.className && year ? classFor(r.className,year) : null;
       writes.push(statement('INSERT INTO students(id,school_id,name,class_id,academic_year,school_year_level,status,archived_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
@@ -160,19 +186,25 @@ export async function processBulkImport(u: any, kind: string, file: File, option
         replacements.push({row:r.row,before:previous.reported,after:r.reported,previousBatch:previous.batch_id});
       } else stats.summariesCreated++;
     }
-    if (r.missing || overlap || kind==='nilam' || creating && (!year || !d.enrolled)) stats.review++;
-    const notes = [r.missing && 'Tahun/kelas perlu semakan.', overlap && 'Liputan AINS bertindih.', kind==='nilam' && 'Kelulusan bacaan belum disahkan.'].filter(Boolean).join(' ');
+    const placementMissing = selective ? creating && (!year || !r.className) : r.missing || creating && (!year || !d.enrolled);
+    if (placementMissing || overlap || kind==='nilam') stats.review++;
+    const notes = [placementMissing && 'Tahun/kelas perlu semakan.', overlap && 'Liputan AINS bertindih.', kind==='nilam' && 'Kelulusan bacaan belum disahkan.'].filter(Boolean).join(' ');
+    savedRows.push(r.row);
+    if (selective) auditRows.push({row:r.row,studentId:student,action,manual:!creating&&r.manual});
     resultRows.push({row:r.row,result:creating?'Profil baharu':action==='update'?'Profil dikemas kini':'Profil dipadankan',notes});
   }
-  if (!processed.size) fail('Tiada baris dipilih untuk disimpan.');
+  if (!processed.size) {
+    if (selective) return {stats,resultRows,message:'Tiada murid disimpan. Semak keputusan baris yang dipilih.'};
+    fail('Tiada baris dipilih untuk disimpan.');
+  }
   const staff = u.name;
   const results = {kind,filename,checksum:hash,year:parsed.year,source:parsed.format,stats,resultRows,staff};
   const periodStart = parsed.year ? parsed.year+'-01-01' : null;
   const batch = statement(
     'INSERT INTO import_batches(id,school_id,dataset,filename,fingerprint,file_hash,source_type,granularity,year,period_start,verification,status,stats,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-    batchId,school,dataset,filename,kind+':'+hash,hash,parsed.format,kind==='nilam'?'annual':'roster',parsed.year,periodStart,'unverified','active',JSON.stringify(results),u.id,at,
+    batchId,school,dataset,filename,kind+':'+hash+(selective?':'+savedRows.join(','):''),hash,parsed.format,kind==='nilam'?'annual':'roster',parsed.year,periodStart,'unverified','active',JSON.stringify(results),u.id,at,
   );
-  await db().batch([batch,...writes,auditStatement(u,'Import '+typeLabel(kind),batchId,{...results,resultRows:undefined,replacements},at)]);
+  await db().batch([batch,...writes,auditStatement(u,'Import '+typeLabel(kind),batchId,{...results,resultRows:undefined,replacements,...(selective?{rows:auditRows}:{})},at)]);
   return {batchId,...results,createdAt:at,message:'Import berjaya disimpan.'};
 }
 

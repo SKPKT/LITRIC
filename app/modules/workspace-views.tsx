@@ -48,7 +48,7 @@ import {
 } from "../litric";
 import { aggregate, MONTHS, coversRange } from "../../lib/domain.mjs";
 import { StudentReportControls, useStudentReport } from './student-report-controls';
-import BulkImport from './bulk-import';
+import RosterImport from './roster-import';
 import { NILAM_DATASET, ROSTER_DATASET } from '../../lib/nilam-annual.mjs';
 const today = () =>
   new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kuala_Lumpur" });
@@ -277,7 +277,7 @@ function Students(ctx: any) {
         }
       >
         <StudentReportControls data={data} filters={filters} setFilters={(v:any)=>{setFilters(v);setPage(0);}} notify={ctx.notify}/>
-        {bulk&&<BulkImport kind="roster" data={data} refresh={ctx.refresh} notify={ctx.notify} onClose={()=>setBulk(false)}/>}
+        {bulk&&<RosterImport data={data} refresh={ctx.refresh} onClose={()=>setBulk(false)}/>}
         <p className="pad">{list.length} murid · Murid berpindah atau tamat sekolah diarkibkan dengan sejarah kekal.</p>
         <div className="table-scroll">
           <table>
